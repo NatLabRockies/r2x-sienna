@@ -1,0 +1,259 @@
+import json
+
+import pytest
+from infrasys import System
+from infrasys.cost_curves import FuelCurve, UnitSystem
+from infrasys.value_curves import LinearCurve
+
+from r2x_sienna.config import SiennaConfig
+from r2x_sienna.exporter import to_psy
+from r2x_sienna.models import (
+    ACBus,
+    Complex,
+    InputOutput,
+    MinMax,
+    PrimeMoversType,
+    ThermalFuels,
+    ThermalGenerationCost,
+    ThermalStandard,
+    UpDown,
+)
+from r2x_sienna.serialization import _serialize_parametric_object, serialize_component_to_psy, serialize_value
+
+
+def create_thermal_standard(name="test_generator", base_power=100.0, **kwargs):
+    """Helper function to create ThermalStandard with default values."""
+    defaults = {
+        "must_run": False,
+        "bus": ACBus.example(),
+        "status": False,
+        "rating": 200.0,
+        "active_power": 0.0,
+        "reactive_power": 0.0,
+        "active_power_limits": MinMax(min=0, max=1),
+        "prime_mover_type": PrimeMoversType.CC,
+        "fuel": ThermalFuels.NATURAL_GAS,
+        "operation_cost": ThermalGenerationCost.example(),
+        "time_at_status": 1_000,
+    }
+    defaults.update(kwargs)
+
+    return ThermalStandard(name=name, base_power=base_power, **defaults)
+
+
+@pytest.fixture
+def sienna_config(data_folder, tmp_path):
+    return SiennaConfig(
+        model_year=2010,
+        system_name="Test System",
+        scenario="test_scenario",
+        system_base_power=100.0,
+        skip_validation=False,
+        json_path=str(data_folder / "test.json"),
+    )
+
+
+@pytest.fixture
+def infrasys_test_system():
+    """Create a test system with basic components for testing."""
+    system = System()
+    system.name = "test_system"
+
+    # Add a test bus
+    bus = ACBus(name="test_bus", number=1)
+    system.add_component(bus)
+
+    # Add a test generator with complete parameters
+    gen = create_thermal_standard(
+        name="test_gen",
+        bus=bus,
+        rating=150.0,
+    )
+    system.add_component(gen)
+
+    return system
+
+
+def test_serialize_component_to_psy(infrasys_test_system):
+    """Test that components can be serialized to PSY format."""
+    components = list(infrasys_test_system._component_mgr.iter_all())
+    if components:
+        component = components[0]
+        serialized = serialize_component_to_psy(component)
+        assert serialized is not None
+        assert "__metadata__" in serialized
+        assert "internal" in serialized
+
+
+def test_get_component_output_fields():
+    """Test that component output fields can be retrieved."""
+    fields = set(ThermalStandard.model_fields.keys())
+    assert isinstance(fields, set)
+    assert len(fields) > 0
+
+
+def test_to_psy_serialization(sienna_config, infrasys_test_system, tmp_path):
+    """Test full PSY serialization."""
+
+    def mock_serialize(*args, **kwargs):
+        pass
+
+    infrasys_test_system._time_series_mgr.serialize = mock_serialize
+
+    system_data = {
+        "system_information": {"name": "Test System", "description": "Test system for PSY serialization"},
+        "data_information": {"version": "1.0", "base_power": 100.0},
+        "component_fields": {},
+    }
+
+    output_file = tmp_path / "test_system.json"
+
+    to_psy(sienna_config, infrasys_test_system, system_data, output_file, write_year=2010)
+
+    assert output_file.exists()
+
+    with open(output_file, "rb") as f:
+        data = json.load(f)
+
+    assert "data" in data
+    assert "components" in data["data"]
+    assert isinstance(data["data"]["components"], list)
+
+
+def test_psy_serialization_with_quantity():
+    """Test PSY serialization with Quantity objects."""
+    component = create_thermal_standard(
+        rating=100.0,
+    )
+
+    result = serialize_value(component.rating, "rating")
+    assert result == 100.0
+
+
+def test_psy_serialization_with_minmax():
+    """Test PSY serialization with MinMax objects."""
+    limits = MinMax(min=10.0, max=100.0)
+    component = create_thermal_standard(
+        active_power_limits=limits,
+    )
+
+    result = serialize_value(component.active_power_limits, "active_power_limits")
+    assert result == {"min": 10.0, "max": 100.0}
+
+
+def test_psy_serialization_with_updown():
+    """Test PSY serialization with UpDown objects."""
+    updown = UpDown(up=50.0, down=30.0)
+    result = serialize_value(updown, "test_field")
+    assert result == {"up": 50.0, "down": 30.0}
+
+
+def test_psy_serialization_with_inputoutput():
+    """Test PSY serialization with InputOutput objects."""
+    inputoutput = InputOutput(input=25.0, output=75.0)
+    result = serialize_value(inputoutput, "test_field")
+    assert result == {"in": 25.0, "out": 75.0}
+
+
+def test_psy_serialization_with_complex():
+    """Test PSY serialization with Complex objects."""
+    complex_val = Complex(real=10.0, imag=5.0)
+    result = serialize_value(complex_val, "test_field")
+    assert result == {"real": 10.0, "imag": 5.0}
+
+
+def test_psy_serialization_with_operational_cost():
+    """Test PSY serialization with operational cost objects."""
+    cost = ThermalGenerationCost(
+        variable=FuelCurve(
+            value_curve=LinearCurve(10.0, 12),
+            vom_cost=LinearCurve(10.0),
+            fuel_cost=0.05,
+            power_units=UnitSystem.NATURAL_UNITS,
+        )
+    )
+
+    component = create_thermal_standard(
+        operation_cost=cost,
+    )
+
+    result = serialize_value(component.operation_cost, "operation_cost")
+    assert result is not None
+    assert isinstance(result, dict)
+    assert "__metadata__" in result
+
+
+def test_psy_serialization_none_value():
+    """Test that PSY serialization returns string values as-is."""
+    component = create_thermal_standard()
+
+    result = serialize_value(component.name, "name")
+    assert result == "test_generator"
+
+
+def test_psy_parametric_serialization():
+    """Test parametric serialization functionality."""
+    cost = ThermalGenerationCost(
+        variable=FuelCurve(
+            value_curve=LinearCurve(10.0, 12),
+            vom_cost=LinearCurve(10.0),
+            fuel_cost=0.05,
+            power_units=UnitSystem.NATURAL_UNITS,
+        )
+    )
+
+    result = _serialize_parametric_object(cost)
+    assert isinstance(result, dict)
+    assert "__metadata__" in result
+    assert result["__metadata__"]["module"] == "PowerSystems"
+    assert result["__metadata__"]["type"] == "ThermalGenerationCost"
+
+
+def test_serialize_nested_component():
+    """Test nested component serialization."""
+
+    component = ACBus.example()
+    result = serialize_value(component, "test_field")
+    assert isinstance(result, dict)
+    assert "value" in result
+    assert result["value"] == str(component.uuid)
+
+
+def test_sienna_config_creation():
+    """Test SiennaConfig creation."""
+    config = SiennaConfig(
+        model_year=2030,
+        system_name="Test System",
+        scenario="test",
+        system_base_power=100.0,
+        skip_validation=True,
+    )
+    assert config.model_year == 2030
+    assert config.primary_model_year == 2030
+    assert config.system_name == "Test System"
+    assert config.scenario == "test"
+    assert config.system_base_power == 100.0
+    assert config.skip_validation is True
+
+
+def test_sienna_config_multiple_years():
+    """Test SiennaConfig with multiple years."""
+    config = SiennaConfig(
+        model_year=[2030, 2040, 2050],
+        system_name="Multi Year System",
+    )
+    assert config.model_year == [2030, 2040, 2050]
+    assert config.primary_model_year == 2030
+
+
+def test_system_data_structure():
+    """Test that the system data structure is properly formatted."""
+    system_data = {
+        "system_information": {"name": "Test System", "description": "Test description"},
+        "data_information": {"version": "1.0", "base_power": 100.0, "components": []},
+    }
+
+    assert "system_information" in system_data
+    assert "data_information" in system_data
+    assert isinstance(system_data["system_information"], dict)
+    assert isinstance(system_data["data_information"], dict)
