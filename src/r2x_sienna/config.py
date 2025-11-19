@@ -68,16 +68,3 @@ class SiennaConfig(PluginConfig):
     skip_validation: Annotated[
         bool, Field(default=False, description="Whether to skip validation during parsing")
     ] = False
-
-    @property
-    def primary_model_year(self) -> int:
-        """Get the primary (first) model year.
-
-        Returns
-        -------
-        int
-            The first model year in the list
-        """
-        if isinstance(self.model_year, list):
-            return self.model_year[0]
-        return self.model_year

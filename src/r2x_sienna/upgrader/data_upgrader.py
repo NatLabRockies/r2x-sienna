@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any
 
 from r2x_core.upgrader import PluginUpgrader
+from r2x_core.upgrader_utils import UpgradeStep
 from r2x_core.versioning import VersionReader
 
 
@@ -55,7 +56,7 @@ class SiennaUpgrader(PluginUpgrader):
     def __init__(
         self,
         path: Path | str,
-        steps: list | None = None,
+        steps: list[UpgradeStep] | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize the Sienna upgrader.
@@ -70,4 +71,6 @@ class SiennaUpgrader(PluginUpgrader):
             Additional keyword arguments (unused, for compatibility).
         """
         self.path = Path(path)
-        self.steps = steps or self.__class__.steps
+        if steps is not None:
+            # Override the class-level registry for this upgrader instance when provided.
+            type(self).steps = steps

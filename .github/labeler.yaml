@@ -1,0 +1,29 @@
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: "uv.lock"
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/*.md"
+
+github_actions:
+  - changed-files:
+      - any-glob-to-any-file: ".github/**"
+
+json:
+  - changed-files:
+      - any-glob-to-any-file: "**/*.json"
+
+markdown:
+  - changed-files:
+      - any-glob-to-any-file: "**/*.md"
+
+release:
+  - changed-files:
+      - any-glob-to-any-file: "CHANGELOG.md"
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file: "tests/**"

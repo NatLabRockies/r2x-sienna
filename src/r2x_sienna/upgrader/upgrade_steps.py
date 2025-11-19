@@ -94,7 +94,7 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
 
 
 @SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
-def upgrade_hydro_pumped_storage(system_data: dict[str, Any]) -> None:
+def upgrade_hydro_pumped_storage(system_data: dict[str, Any]) -> dict[str, Any]:
     """
     Upgrade HydroPumpedStorage components into HydroPumpTurbine with head and tail HydroReservoirs.
 

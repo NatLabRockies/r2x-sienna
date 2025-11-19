@@ -55,6 +55,7 @@ exclude = [
 ]
 ignore_missing_imports=true
 
+
 [dependency-groups]
 dev = [
     "ipython>=9.2.0",
@@ -85,5 +86,12 @@ filterwarnings = [
     "ignore::pydantic._internal._generate_schema.UnsupportedFieldAttributeWarning",
 ]
 
-[tool.ty.rules]
-unresolved-import = "ignore"
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "$version"
+version_scheme = "pep440"
+version_provider = "uv"
+major_version_zero = true
+
+[tool.uv]
+prerelease = "allow"

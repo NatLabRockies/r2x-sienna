@@ -229,7 +229,6 @@ def test_sienna_config_creation():
         skip_validation=True,
     )
     assert config.model_year == 2030
-    assert config.primary_model_year == 2030
     assert config.system_name == "Test System"
     assert config.scenario == "test"
     assert config.system_base_power == 100.0
@@ -243,7 +242,6 @@ def test_sienna_config_multiple_years():
         system_name="Multi Year System",
     )
     assert config.model_year == [2030, 2040, 2050]
-    assert config.primary_model_year == 2030
 
 
 def test_system_data_structure():

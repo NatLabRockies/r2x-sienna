@@ -77,8 +77,8 @@ def _(value: list, field: str = "") -> list[dict[str, str]]:
 
 
 def _serialize_parametric_object(obj: InfraSysBaseModel) -> dict[str, Any]:
-    output_dict = {}
-    parametric_types = set()
+    output_dict: dict[str, Any] = {}
+    parametric_types: set[str] = set()
 
     for key in obj.model_fields_set:
         attribute = getattr(obj, key)
@@ -104,7 +104,7 @@ def _serialize_parametric_object(obj: InfraSysBaseModel) -> dict[str, Any]:
             serialized = serialize_value(attribute, key)
             output_dict[key] = serialized if serialized is not None else attribute
 
-    metadata = {
+    metadata: dict[str, Any] = {
         "module": "InfrastructureSystems" if not isinstance(obj, OperationalCost) else "PowerSystems",
         "type": obj.__class__.__name__,
     }

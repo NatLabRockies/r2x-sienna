@@ -5,7 +5,7 @@ import shutil
 import tempfile
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 from uuid import UUID
 
 import h5py
@@ -75,7 +75,7 @@ class SiennaParser(BaseParser):
         self.component_fields: dict[str, Any] = {}
 
         # Store stdin_payload if provided (for r2x-core 0.1.0+ pipeline support)
-        stdin_payload = getattr(self, "_stdin_payload", None)
+        stdin_payload: IO[str] | IO[bytes] | str | bytes | None = getattr(self, "_stdin_payload", None)
         self._use_stdin = stdin_payload is not None
         if self._use_stdin:
             logger.debug("Sienna parser will read system data from stdin")
@@ -83,6 +83,13 @@ class SiennaParser(BaseParser):
             logger.debug("Sienna parser will read system data from json_path")
 
         return Ok()
+
+    def _require_config(self) -> SiennaConfig:
+        """Return the parser config with a concrete type check."""
+        config = self.config
+        if not isinstance(config, SiennaConfig):
+            raise ValueError("SiennaParser requires a SiennaConfig instance")
+        return config
 
     def build_system_components(self) -> Result[None, ParserError]:
         """Build and add components to the system."""
@@ -104,19 +111,19 @@ class SiennaParser(BaseParser):
         self.uuid_map: dict[str, dict] = {}
 
         # Load system data from stdin or from json_path
+        stdin_payload: IO[str] | IO[bytes] | str | bytes | None = getattr(self, "_stdin_payload", None)
         if self._use_stdin:
             logger.debug("Reading system data from stdin_payload")
             # Parse stdin_payload - could be IO, str, or bytes
-            if isinstance(self._stdin_payload, (str, bytes)):
-                json_str = (
-                    self._stdin_payload.decode()
-                    if isinstance(self._stdin_payload, bytes)
-                    else self._stdin_payload
-                )
+            if stdin_payload is None:
+                raise ValueError("stdin payload not available despite _use_stdin being True")
+
+            if isinstance(stdin_payload, (str, bytes)):
+                json_str = stdin_payload.decode() if isinstance(stdin_payload, bytes) else stdin_payload
                 system_json = json.loads(json_str)
             else:
                 # It's a file-like object
-                content = self._stdin_payload.read()
+                content = stdin_payload.read()
                 json_str = content.decode() if isinstance(content, bytes) else content
                 system_json = json.loads(json_str)
 
@@ -128,10 +135,11 @@ class SiennaParser(BaseParser):
 
             json_data = system_data.pop("data", system_data.copy())
         else:
-            if not self.config.json_path:
+            config = self._require_config()
+            if not config.json_path:
                 raise ValueError("json_path must be specified in SiennaConfig when not reading from stdin")
 
-            sys_path = Path(self.config.json_path)
+            sys_path = Path(config.json_path)
             data_file = DataFile(name="system", fpath=sys_path)
             self.store.add_data(data_file)
             system_data = self.store.read_data(name="system")
@@ -386,7 +394,11 @@ class SiennaParser(BaseParser):
                 )
                 return
 
-            json_path = Path(self.config.json_path)
+            config = self._require_config()
+            if not config.json_path:
+                raise ValueError("json_path must be specified in SiennaConfig to load time series data")
+
+            json_path = Path(config.json_path)
             h5_dir = json_path.parent
             time_series_filename = self.data_information["time_series_storage_file"]
             time_series_path = Path(time_series_filename)

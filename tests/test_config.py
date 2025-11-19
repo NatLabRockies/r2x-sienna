@@ -1,7 +1,5 @@
 """Tests for Sienna configuration."""
 
-import pytest
-
 from r2x_sienna.config import SiennaConfig
 
 
@@ -11,7 +9,6 @@ def test_sienna_config_creation_single_year():
         model_year=2030,
     )
     assert config.model_year == 2030
-    assert config.primary_model_year == 2030
     assert config.system_name is None
     assert config.scenario == "base"
 
@@ -20,7 +17,6 @@ def test_sienna_config_creation_multiple_years():
     """Test creating a Sienna config with multiple years."""
     config = SiennaConfig(model_year=[2030, 2040, 2050], system_name="MultiYear", scenario="test_scenario")
     assert config.model_year == [2030, 2040, 2050]
-    assert config.primary_model_year == 2030
     assert config.system_name == "MultiYear"
     assert config.scenario == "test_scenario"
 
@@ -49,14 +45,6 @@ def test_sienna_config_scenario_field():
         scenario="high_renewable",
     )
     assert config.scenario == "high_renewable"
-
-
-def test_sienna_config_primary_model_year():
-    """Test primary_model_year property returns first year."""
-    config = SiennaConfig(
-        model_year=[2029, 2035, 2040],
-    )
-    assert config.primary_model_year == 2029
 
 
 def test_sienna_config_default_system_name():
