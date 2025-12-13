@@ -51,7 +51,7 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
             "level_targets": comp.get("storage_target"),
             "travel_time": None,
             "intake_elevation": ext.get("intake_elevation", 0.0),
-            "head_to_volume_factor": LinearCurve(0.0),
+            "head_to_volume_factor": LinearCurve(0.0).model_dump(round_trip=True),
             "operation_cost": HydroReservoirCost().model_dump(round_trip=True),
             "level_data_type": str(ReservoirDataType.ENERGY),  # NOTE: Is this a good default?
             "internal": comp.get("internal", {}),
@@ -90,6 +90,7 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
         new_components.extend([reservoir, turbine])
 
     system_data["data"]["components"] = new_components
+    logger.debug("Completed HydroEnergyReservoir upgrade step.")
     return system_data
 
 
@@ -188,6 +189,7 @@ def upgrade_hydro_pumped_storage(system_data: dict[str, Any]) -> dict[str, Any]:
         new_components.extend([head_reservoir, tail_reservoir, pump_turbine])
 
     system_data["data"]["components"] = new_components
+    logger.debug("Completed HydroPumpedStorage upgrade step.")
     return system_data
 
 
@@ -215,6 +217,7 @@ def upgrade_ac_bus(system_data: dict[str, Any]) -> dict[str, Any]:
         new_components.extend([comp])
 
     system_data["data"]["components"] = new_components
+    logger.debug("Completed ACBus upgrade step.")
     return system_data
 
 
@@ -266,6 +269,7 @@ def upgrade_3w_transformer(system_data: dict[str, Any]) -> dict[str, Any]:
         new_components.extend([comp])
 
     system_data["data"]["components"] = new_components
+    logger.debug("Completed Transformer3W upgrade step.")
     return system_data
 
 
@@ -282,6 +286,7 @@ def upgrade_two_terminal_hvdc_line(system_data: dict[str, Any]) -> dict[str, Any
         if "__metadata__" in comp and comp["__metadata__"].get("type") == "TwoTerminalHVDCLine":
             comp["__metadata__"]["type"] = "TwoTerminalGenericHVDCLine"
 
+    logger.debug("Completed TwoTerminalHVDCLine to TwoTerminalGenericHVDCLine upgrade step.")
     return system_data
 
 
@@ -300,6 +305,7 @@ def upgrade_2w_transformer(system_data: dict[str, Any]) -> dict[str, Any]:
         ) and isinstance(comp.get("primary_shunt"), float):
             comp["primary_shunt"] = {"real": comp["primary_shunt"], "imag": 0.0}
 
+    logger.debug("Completed Transformer2W primary_shunt upgrade step.")
     return system_data
 
 
@@ -313,4 +319,5 @@ def remove_time_series_container(system_data: dict[str, Any]) -> dict[str, Any]:
         if "time_series_container" in comp:
             comp.pop("time_series_container")
 
+    logger.debug("Completed removal of time_series_container from components.")
     return system_data

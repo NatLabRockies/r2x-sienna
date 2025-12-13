@@ -1,5 +1,7 @@
 """Tests for Sienna configuration."""
 
+import pytest
+
 from r2x_sienna.config import SiennaConfig
 
 
@@ -70,17 +72,15 @@ def test_sienna_config_default_system_base_power():
 
 
 def test_sienna_config_load_defaults_file_not_found():
-    """Test that load_defaults returns empty dict when file doesn't exist."""
-    # The classmethod API returns an empty dict if defaults.json doesn't exist
-    result = SiennaConfig.load_defaults(config_path="/nonexistent/path")
-    assert result == {}
+    """Test that load_defaults raises FileNotFoundError when file doesn't exist."""
+    with pytest.raises(FileNotFoundError):
+        SiennaConfig.load_defaults(defaults_file="/nonexistent/path/defaults.json")
 
 
 def test_sienna_config_with_defaults(tmp_path):
     """Test using custom defaults."""
-    test_file = tmp_path / "defaults.json"
+    test_file = tmp_path / "sienna_defaults.json"
     test_file.write_text('{"excluded_techs": ["coal", "oil"]}')
 
-    # Use classmethod with config_path (directory) not file
-    defaults = SiennaConfig.load_defaults(config_path=tmp_path)
+    defaults = SiennaConfig.load_defaults(defaults_file=test_file)
     assert defaults["excluded_techs"] == ["coal", "oil"]

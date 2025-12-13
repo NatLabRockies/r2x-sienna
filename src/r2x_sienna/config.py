@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+import json
+from pathlib import Path
+from typing import Annotated, Any
 
 from pydantic import Field
 from r2x_core.plugin_config import PluginConfig
@@ -68,3 +70,35 @@ class SiennaConfig(PluginConfig):
     skip_validation: Annotated[
         bool, Field(default=False, description="Whether to skip validation during parsing")
     ] = False
+
+    @classmethod
+    def load_defaults(cls, defaults_file: str | Path | None = None) -> dict[str, Any]:
+        """Load default constants from JSON file.
+
+        Parameters
+        ----------
+        defaults_file : str | Path | None, optional
+            Path to JSON file with default values. If None, uses package defaults.
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary containing default values and constants
+
+        Raises
+        ------
+        FileNotFoundError
+            If the defaults file doesn't exist
+        json.JSONDecodeError
+            If the defaults file contains invalid JSON
+        """
+        if defaults_file is None:
+            defaults_file = Path(__file__).parent / "defaults" / "sienna_defaults.json"
+        else:
+            defaults_file = Path(defaults_file)
+
+        if not defaults_file.exists():
+            raise FileNotFoundError(f"Defaults file not found: {defaults_file}")
+
+        with open(defaults_file) as f:
+            return json.load(f)

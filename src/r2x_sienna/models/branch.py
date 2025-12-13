@@ -34,7 +34,7 @@ class ACBranch(Branch):
     to_bus: Annotated[ACBus, Field(description="Bus connected downstream from the arc.")]
     r: Annotated[float | None, Field(description=("Resistance of the branch"))] = None
     x: Annotated[float | None, Field(description=("Reactance of the branch"))] = None
-    rating: Annotated[ActivePower, Field(ge=0, description="Thermal rating of the line.")] | None = None
+    rating: Annotated[float, Field(ge=0, description="Thermal rating of the line.")] | None = None
 
 
 class MonitoredLine(ACBranch):
@@ -163,8 +163,8 @@ class TwoWindingTransformer(ACBranch):
     ) = None
     base_voltage_primary: float | None = None
     base_voltage_secondary: float | None = None
-    rating_b: ActivePower | None = None
-    rating_c: ActivePower | None = None
+    rating_b: float | None = None
+    rating_c: float | None = None
     winding_group_number: WindingGroupNumber = WindingGroupNumber.UNDEFINED
     control_objective: TransformerControlObjective = TransformerControlObjective.UNDEFINED
 
@@ -322,17 +322,16 @@ class ThreeWindingTransformer(Branch):
     available_secondary: Annotated[bool, Field(description="Status if secondary winding is available")] = True
     available_tertiary: Annotated[bool, Field(description="Status if tertiary winding is available")] = True
     rating: (
-        Annotated[ActivePower, Field(ge=0, description="Thermal rating of the generic Transformer 3W.")]
-        | None
+        Annotated[float, Field(ge=0, description="Thermal rating of the generic Transformer 3W.")] | None
     ) = None
     rating_primary: (
-        Annotated[ActivePower | None, Field(ge=0, description="Rating (in MVA) for primary winding")] | None
+        Annotated[float | None, Field(ge=0, description="Rating (in MVA) for primary winding")] | None
     ) = None
     rating_secondary: (
-        Annotated[ActivePower | None, Field(ge=0, description="Rating (in MVA) for secondary winding")] | None
+        Annotated[float | None, Field(ge=0, description="Rating (in MVA) for secondary winding")] | None
     ) = None
     rating_tertiary: (
-        Annotated[ActivePower | None, Field(ge=0, description="Rating (in MVA) for tertiary winding")] | None
+        Annotated[float | None, Field(ge=0, description="Rating (in MVA) for tertiary winding")] | None
     ) = None
 
 
@@ -850,9 +849,7 @@ class TwoTerminalVSCLine(TwoTerminalHVDCLine):
     max_dc_current_from: (
         Annotated[float, Field(description="Maximum stable dc current limits (A)")] | None
     ) = None
-    rating_from: (
-        Annotated[ActivePower, Field(description="Converter rating in MVA in the from bus")] | None
-    ) = None
+    rating_from: Annotated[float, Field(description="Converter rating in MVA in the from bus")] | None = None
     power_factor_weighting_fraction_from: Annotated[
         float,
         Field(
@@ -920,9 +917,7 @@ class TwoTerminalVSCLine(TwoTerminalHVDCLine):
     max_dc_current_to: Annotated[float, Field(description="Maximum stable dc current limits (A)")] | None = (
         None
     )
-    rating_to: Annotated[ActivePower, Field(description="Converter rating in MVA in the to bus")] | None = (
-        None
-    )
+    rating_to: Annotated[float, Field(description="Converter rating in MVA in the to bus")] | None = None
     power_factor_weighting_fraction_to: Annotated[
         float,
         Field(
