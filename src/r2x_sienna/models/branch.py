@@ -29,9 +29,7 @@ class Branch(Device):
 class ACBranch(Branch):
     """Class representing an AC connection between components."""
 
-    arc: Annotated[Arc | None, Field(description="The branch's connections.")] = None
-    from_bus: Annotated[ACBus, Field(description="Bus connected upstream from the arc.")]
-    to_bus: Annotated[ACBus, Field(description="Bus connected downstream from the arc.")]
+    arc: Annotated[Arc, Field(description="The branch's connections.")]
     r: Annotated[float | None, Field(description=("Resistance of the branch"))] = None
     x: Annotated[float | None, Field(description=("Reactance of the branch"))] = None
     rating: Annotated[float, Field(ge=0, description="Thermal rating of the line.")] | None = None
@@ -57,6 +55,8 @@ class MonitoredLine(ACBranch):
     ] = None
     angle_limits: MinMax | None = None
     losses: Annotated[Percentage, Field(description="Power losses on the line.")] | None = None
+    rating_b: Annotated[float, Field(description="Second thermal rating of the line.")] | None = None
+    rating_c: Annotated[float, Field(description="Third thermal rating of the line.")] | None = None
 
     @field_serializer("flow_limits")
     def serialize_flow_limits(self, fromto_tofrom: FromTo_ToFrom | dict | None) -> dict[str, Any] | None:
@@ -78,8 +78,10 @@ class MonitoredLine(ACBranch):
     def example(cls) -> "MonitoredLine":
         return MonitoredLine(
             name="ExampleMonitoredLine",
-            from_bus=ACBus.example(),
-            to_bus=ACBus.example(),
+            arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
+            rating=ActivePower(100, "MW"),
+            rating_b=ActivePower(120, "MW"),
+            rating_c=ActivePower(150, "MW"),
             active_power_flow=100.0,
             reactive_power_flow=0.0,
             losses=Percentage(10, "%"),
@@ -91,6 +93,8 @@ class Line(ACBranch):
 
     b: Annotated[FromTo_ToFrom | None, Field(description="Shunt susceptance in pu")] = None
     g: Annotated[FromTo_ToFrom | None, Field(description="Shunt conductance in pu")] = None
+    rating_b: Annotated[float, Field(description="Second thermal rating of the line.")] | None = None
+    rating_c: Annotated[float, Field(description="Third thermal rating of the line.")] | None = None
     active_power_flow: NonNegativeFloat
     reactive_power_flow: NonNegativeFloat
     angle_limits: MinMax
@@ -99,9 +103,10 @@ class Line(ACBranch):
     def example(cls) -> "Line":
         return Line(
             name="ExampleLine",
-            from_bus=ACBus.example(),
-            to_bus=ACBus.example(),
+            arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
             rating=ActivePower(100, "MW"),
+            rating_b=ActivePower(120, "MW"),
+            rating_c=ActivePower(150, "MW"),
             active_power_flow=100,
             reactive_power_flow=100,
             angle_limits=MinMax(min=-0.03, max=0.03),
@@ -126,6 +131,8 @@ class DiscreteControlledACBranch(ACBranch):
         DiscreteControlledBranchStatus,
         Field(default=DiscreteControlledBranchStatus.CLOSED, description="Open or Close status"),
     ] = DiscreteControlledBranchStatus.CLOSED
+    rating_b: Annotated[float, Field(description="Second thermal rating of the line.")] | None = None
+    rating_c: Annotated[float, Field(description="Third thermal rating of the line.")] | None = None
 
     @classmethod
     def example(cls) -> "DiscreteControlledACBranch":
@@ -137,16 +144,17 @@ class DiscreteControlledACBranch(ACBranch):
 
         return DiscreteControlledACBranch(
             name="ExampleDiscreteControlledACBranch",
+            arc=Arc(from_to=from_bus, to_from=to_bus),
             available=True,
             active_power_flow=0.0,
             reactive_power_flow=0.0,
             r=0.01,
             x=0.05,
             rating=ActivePower(100, "MVA"),
+            rating_b=ActivePower(120, "MVA"),
+            rating_c=ActivePower(150, "MVA"),
             discrete_branch_type=DiscreteControlledBranchType.BREAKER,
             branch_status=DiscreteControlledBranchStatus.CLOSED,
-            from_bus=from_bus,
-            to_bus=to_bus,
         )
 
 
@@ -163,8 +171,6 @@ class TwoWindingTransformer(ACBranch):
     ) = None
     base_voltage_primary: float | None = None
     base_voltage_secondary: float | None = None
-    rating_b: float | None = None
-    rating_c: float | None = None
     winding_group_number: WindingGroupNumber = WindingGroupNumber.UNDEFINED
     control_objective: TransformerControlObjective = TransformerControlObjective.UNDEFINED
 
@@ -464,8 +470,7 @@ class Transformer2W(TwoWindingTransformer):
         return Transformer2W(
             name="Example2WTransformer",
             rating=ActivePower(100, "MW"),
-            from_bus=ACBus.example(),
-            to_bus=ACBus.example(),
+            arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
             active_power_flow=100,
             reactive_power_flow=100,
             primary_shunt=Complex(real=0.0, imag=0.0),
@@ -491,8 +496,7 @@ class TapTransformer(TwoWindingTransformer):
     def example(cls) -> "TapTransformer":
         return TapTransformer(
             name="ExampleTapTransformer",
-            from_bus=ACBus.example(),
-            to_bus=ACBus.example(),
+            arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
             rating=ActivePower(100, "MW"),
             active_power_flow=50.0,
             reactive_power_flow=10.0,
@@ -522,8 +526,7 @@ class PhaseShiftingTransformer(TwoWindingTransformer):
     def example(cls) -> "PhaseShiftingTransformer":
         return PhaseShiftingTransformer(
             name="ExamplePhaseShiftingTransformer",
-            from_bus=ACBus.example(),
-            to_bus=ACBus.example(),
+            arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
             rating=ActivePower(100, "MW"),
             active_power_flow=50.0,
             reactive_power_flow=10.0,
@@ -537,8 +540,7 @@ class PhaseShiftingTransformer(TwoWindingTransformer):
 class DCBranch(Branch):
     """Class representing a DC connection between components."""
 
-    from_bus: Annotated[DCBus, Field(description="Bus connected upstream from the arc.")]
-    to_bus: Annotated[DCBus, Field(description="Bus connected downstream from the arc.")]
+    arc: Annotated[Arc, Field(description="The branch's connections.")]
 
 
 class AreaInterchange(Branch):
@@ -574,8 +576,7 @@ class TModelHVDCLine(DCBranch):
     def example(cls) -> "TModelHVDCLine":
         return TModelHVDCLine(
             name="ExampleDCLine",
-            from_bus=DCBus.example(),
-            to_bus=DCBus.example(),
+            arc=Arc(from_to=DCBus.example(), to_from=DCBus.example()),
             rating_up=100,
             rating_down=80,
         )
@@ -758,8 +759,7 @@ class TwoTerminalLCCLine(TwoTerminalHVDCLine):
         return TwoTerminalLCCLine(
             name="ExampleLCCLine",
             available=True,
-            from_bus=ACBus.example(),
-            to_bus=ACBus.example(),
+            arc=Arc(from_to=DCBus.example(), to_from=DCBus.example()),
             active_power_flow=500.0,
             r=0.01,
             transfer_setpoint=500.0,
@@ -939,8 +939,7 @@ class TwoTerminalVSCLine(TwoTerminalHVDCLine):
         return TwoTerminalVSCLine(
             name="ExampleVSCLine",
             available=True,
-            from_bus=ACBus.example(),
-            to_bus=ACBus.example(),
+            arc=Arc(from_to=DCBus.example(), to_from=DCBus.example()),
             active_power_flow=400.0,
             rating=ActivePower(500.0, "MW"),
             active_power_limits_from=MinMax(min=0.0, max=500.0),

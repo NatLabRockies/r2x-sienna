@@ -1156,6 +1156,14 @@ class HydroReservoir(Device):
         float,
         Field(description="Initial level of the reservoir relative to the storage_level_limits.max."),
     ]
+    max_level: Annotated[
+        float | int,
+        Field(
+            alias="Max Level",
+            description="Maximum level",
+            ge=0,
+        ),
+    ] = 1e30
     spillage_limits: Annotated[
         MinMax | None,
         Field(

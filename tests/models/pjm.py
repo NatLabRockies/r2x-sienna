@@ -14,6 +14,7 @@ from r2x_sienna.config import SiennaConfig
 from r2x_sienna.exporter import to_psy
 from r2x_sienna.models import (
     ACBus,
+    Arc,
     Area,
     AreaInterchange,
     FromTo_ToFrom,
@@ -138,8 +139,7 @@ def pjm_2area() -> System:
         system.add_component(
             Line(
                 name=branch["Name"],
-                from_bus=busf,
-                to_bus=bust,
+                arc=Arc(from_to=busf, to_from=bust),
                 x=branch["x"],
                 r=branch["r"],
                 rating=branch["MaxRating"],  # Use float instead of MW units
@@ -153,12 +153,11 @@ def pjm_2area() -> System:
     bust = system.get_component(ACBus, "Bus_nodeC_2")
     branch_monitored = MonitoredLine(
         name="inter_area_line",
-        from_bus=busf,
+        arc=Arc(from_to=busf, to_from=bust),
         r=0.003,
         x=0.03,
         active_power_flow=0.0,
         reactive_power_flow=0.0,
-        to_bus=bust,
         flow_limits=FromTo_ToFrom(from_to=-1000.0, to_from=1000.0),  # Use float instead of MW units
     )
     system.add_component(branch_monitored)

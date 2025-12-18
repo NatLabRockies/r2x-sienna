@@ -99,7 +99,6 @@ class SiennaExporter(BaseExporter):
                 logger.debug(f"Removed existing storage file: {full_storage_path}")
 
             self.system._time_series_mgr.serialize({}, full_storage_path, db_name=self.system.DB_FILENAME)
-
             self.output_json["data"]["time_series_storage_type"] = (
                 "InfrastructureSystems.Hdf5TimeSeriesStorage"
             )
@@ -138,7 +137,7 @@ class SiennaExporter(BaseExporter):
                 "description": None,
                 "__metadata__": {"module": "PowerSystems", "type": "SystemMetadata"},
             },
-            "data_format_version": "4.0.0",
+            "data_format_version": "5.0.0",
         }
 
 

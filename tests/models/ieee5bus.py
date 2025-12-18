@@ -14,6 +14,7 @@ from r2x_sienna.exporter import to_psy
 from r2x_sienna.models.enums import PrimeMoversType, StorageTechs, ThermalFuels
 from r2x_sienna.models import (
     ACBus,
+    Arc,
     Area,
     EnergyReservoirStorage,
     InputOutput,
@@ -176,8 +177,7 @@ def ieee5bus() -> System:
         name="line_ab",
         active_power_flow=0.0,
         reactive_power_flow=0.0,
-        from_bus=bus_1,
-        to_bus=bus_2,
+        arc=Arc(from_to=bus_1, to_from=bus_2),
         r=0.01,
         x=0.1,
     )
@@ -187,8 +187,7 @@ def ieee5bus() -> System:
         name="line_ad",
         active_power_flow=0.0,
         reactive_power_flow=0.0,
-        from_bus=bus_1,
-        to_bus=bus_4,
+        arc=Arc(from_to=bus_1, to_from=bus_4),
         r=0.01,
         x=0.1,
     )
@@ -198,8 +197,7 @@ def ieee5bus() -> System:
         name="line_ae",
         active_power_flow=0.0,
         reactive_power_flow=0.0,
-        from_bus=bus_1,
-        to_bus=bus_5,
+        arc=Arc(from_to=bus_1, to_from=bus_5),
         r=0.01,
         x=0.1,
     )
@@ -209,8 +207,7 @@ def ieee5bus() -> System:
         name="line_bc",
         active_power_flow=0.0,
         reactive_power_flow=0.0,
-        from_bus=bus_2,
-        to_bus=bus_3,
+        arc=Arc(from_to=bus_2, to_from=bus_3),
         r=0.01,
         x=0.1,
     )
@@ -220,8 +217,7 @@ def ieee5bus() -> System:
         name="line_cd",
         active_power_flow=0.0,
         reactive_power_flow=0.0,
-        from_bus=bus_3,
-        to_bus=bus_4,
+        arc=Arc(from_to=bus_3, to_from=bus_4),
         r=0.01,
         x=0.1,
     )
@@ -231,8 +227,7 @@ def ieee5bus() -> System:
         name="line_ed",
         active_power_flow=0.0,
         reactive_power_flow=0.0,
-        from_bus=bus_5,
-        to_bus=bus_4,
+        arc=Arc(from_to=bus_5, to_from=bus_4),
         r=0.01,
         x=0.1,
     )
