@@ -5,7 +5,7 @@ from typing import Annotated
 from pydantic import Field, NonNegativeFloat
 
 from r2x_sienna.models.core import StaticInjection
-from r2x_sienna.models.enums import FACTSOperationModes
+from r2x_sienna.models.enums import FACTSOperationModes, LoadConformity
 from r2x_sienna.models.named_tuples import Complex, MinMax
 from r2x_sienna.models.topology import ACBus, Bus
 from r2x_sienna.units import ActivePower, ApparentPower
@@ -99,11 +99,17 @@ class PowerLoad(StaticLoad):
             description="Base power of the unit (MVA) for per unitization.",
         ),
     ] = None
+    comformity: LoadConformity = LoadConformity.UNDEFINED
     operation_cost: float | None = None
 
     @classmethod
     def example(cls) -> "PowerLoad":
-        return PowerLoad(name="ExampleLoad", bus=ACBus.example(), active_power=ActivePower(1000, "MW"))
+        return PowerLoad(
+            name="ExampleLoad",
+            bus=ACBus.example(),
+            comformity=LoadConformity.CONFORMING,
+            active_power=ActivePower(1000, "MW"),
+        )
 
 
 class StandardLoad(StaticLoad):
@@ -112,6 +118,7 @@ class StandardLoad(StaticLoad):
     constant_reactive_power: float
     impedance_active_power: float
     impedance_reactive_power: float
+    comformity: LoadConformity = LoadConformity.UNDEFINED
     current_active_power: float
     current_reactive_power: float
     max_constant_active_power: float
@@ -149,6 +156,7 @@ class InterruptiblePowerLoad(ControllableLoad):
         Annotated[ActivePower, Field(gt=0, description=" Initial steady-state reactive power demand.")] | None
     ) = None
     operation_cost: float | None = None
+    comformity: LoadConformity = LoadConformity.UNDEFINED
 
 
 class FixedAdmittance(ElectricLoad):

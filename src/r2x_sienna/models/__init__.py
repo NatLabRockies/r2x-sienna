@@ -44,6 +44,7 @@ from .enums import (
     TransformerControlObjective,
     WindingCategory,
     WindingGroupNumber,
+    ACBusTypes,
 )
 from .generators import (
     EnergyReservoirStorage,
@@ -99,6 +100,7 @@ __all__ = [
     "HydroTurbineType",
     "PrimeMoversType",
     "ThermalFuels",
+    "ACBusTypes",
     # attributes
     "GeographicInfo",
     "ImpedanceCorrectionData",
