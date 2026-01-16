@@ -10,7 +10,7 @@ from .upgrader.data_upgrader import SiennaUpgrader, SiennaVersionDetector
 manifest = PluginManifest(package="r2x-sienna")
 
 manifest.add(PluginSpec.parser(name="r2x-sienna.parser", entry=SiennaParser, config=SiennaConfig))
-manifest.add(PluginSpec.parser(name="r2x-sienna.exporter", entry=SiennaExporter, config=SiennaConfig))
+manifest.add(PluginSpec.exporter(name="r2x-sienna.exporter", entry=SiennaExporter, config=SiennaConfig))
 manifest.add(
     PluginSpec.upgrader(
         name="r2x-sienna.upgrader",
