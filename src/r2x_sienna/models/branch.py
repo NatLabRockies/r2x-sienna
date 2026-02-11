@@ -6,16 +6,15 @@ from infrasys.value_curves import InputOutputCurve, LinearCurve
 from pint import Quantity
 from pydantic import Field, NonNegativeFloat, NonPositiveFloat, field_serializer
 
-from r2x_sienna.models.enums import (
+from .core import Device
+from .enums import (
     DiscreteControlledBranchStatus,
     DiscreteControlledBranchType,
     TransformerControlObjective,
     WindingGroupNumber,
 )
-from r2x_sienna.models.core import Device
-from r2x_sienna.models.named_tuples import FromTo_ToFrom, MinMax, Complex
-from r2x_sienna.models.topology import ACBus, Arc, Area, DCBus
-from r2x_sienna.units import ActivePower, Percentage
+from .named_tuples import Complex, FromTo_ToFrom, MinMax
+from .topology import ACBus, Arc, Area, DCBus
 
 
 class Branch(Device):
@@ -54,7 +53,7 @@ class MonitoredLine(ACBranch):
         ),
     ] = None
     angle_limits: MinMax | None = None
-    losses: Annotated[Percentage, Field(description="Power losses on the line.")] | None = None
+    losses: Annotated[float, Field(description="Power losses on the line.")] | None = None
     rating_b: Annotated[float, Field(description="Second thermal rating of the line.")] | None = None
     rating_c: Annotated[float, Field(description="Third thermal rating of the line.")] | None = None
 
@@ -79,12 +78,12 @@ class MonitoredLine(ACBranch):
         return MonitoredLine(
             name="ExampleMonitoredLine",
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
-            rating=ActivePower(100, "MW"),
-            rating_b=ActivePower(120, "MW"),
-            rating_c=ActivePower(150, "MW"),
+            rating=100,
+            rating_b=120,
+            rating_c=120,
             active_power_flow=100.0,
             reactive_power_flow=0.0,
-            losses=Percentage(10, "%"),
+            losses=0.10,
         )
 
 
@@ -104,9 +103,9 @@ class Line(ACBranch):
         return Line(
             name="ExampleLine",
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
-            rating=ActivePower(100, "MW"),
-            rating_b=ActivePower(120, "MW"),
-            rating_c=ActivePower(150, "MW"),
+            rating=100,
+            rating_b=120,
+            rating_c=150,
             active_power_flow=100,
             reactive_power_flow=100,
             angle_limits=MinMax(min=-0.03, max=0.03),
@@ -150,9 +149,9 @@ class DiscreteControlledACBranch(ACBranch):
             reactive_power_flow=0.0,
             r=0.01,
             x=0.05,
-            rating=ActivePower(100, "MVA"),
-            rating_b=ActivePower(120, "MVA"),
-            rating_c=ActivePower(150, "MVA"),
+            rating=100,
+            rating_b=120,
+            rating_c=150,
             discrete_branch_type=DiscreteControlledBranchType.BREAKER,
             branch_status=DiscreteControlledBranchStatus.CLOSED,
         )
@@ -171,8 +170,8 @@ class TwoWindingTransformer(ACBranch):
     ) = None
     base_voltage_primary: float | None = None
     base_voltage_secondary: float | None = None
-    winding_group_number: WindingGroupNumber = WindingGroupNumber.UNDEFINED
-    control_objective: TransformerControlObjective = TransformerControlObjective.UNDEFINED
+    rating_b: Annotated[float, Field(description="Second thermal rating of the transformer.")] | None = None
+    rating_c: Annotated[float, Field(description="Third thermal rating of the transformer.")] | None = None
 
 
 class ThreeWindingTransformer(Branch):
@@ -230,69 +229,45 @@ class ThreeWindingTransformer(Branch):
     r_primary: Annotated[
         float,
         Field(
-            ge=-2,
-            le=4,
-            description="Equivalent resistance in pu from primary to star bus, validation range: (-2, 4)",
+            description="Equivalent resistance in pu from primary to star bus",
         ),
     ]
     x_primary: Annotated[
         float,
         Field(
-            ge=-2,
-            le=4,
-            description="Equivalent reactance in pu from primary to star bus, validation range: (-2, 4)",
+            description="Equivalent reactance in pu from primary to star bus",
         ),
     ]
     r_secondary: Annotated[
         float,
         Field(
-            ge=-2,
-            le=4,
-            description="Equivalent resistance in pu from secondary to star bus, validation range: (-2, 4)",
+            description="Equivalent resistance in pu from secondary to star bus",
         ),
     ]
     x_secondary: Annotated[
         float,
         Field(
-            ge=-2,
-            le=4,
-            description="Equivalent reactance in pu from secondary to star bus, validation range: (-2, 4)",
+            description="Equivalent reactance in pu from secondary to star bus",
         ),
     ]
     r_tertiary: Annotated[
         float,
         Field(
-            ge=-2,
-            le=4,
-            description="Equivalent resistance in pu from tertiary to star bus, validation range: (-2, 4)",
+            description="Equivalent resistance in pu from tertiary to star bus",
         ),
     ]
     x_tertiary: Annotated[
         float,
         Field(
-            ge=-2,
-            le=4,
-            description="Equivalent reactance in pu from tertiary to star bus, validation range: (-2, 4)",
+            description="Equivalent reactance in pu from tertiary to star bus",
         ),
     ]
-    r_12: Annotated[
-        float, Field(ge=0, le=4, description="Measured resistance from primary to secondary windings")
-    ]
-    x_12: Annotated[
-        float, Field(ge=0, le=4, description="Measured reactance from primary to secondary windings")
-    ]
-    r_23: Annotated[
-        float, Field(ge=0, le=4, description="Measured resistance from secondary to tertiary windings")
-    ]
-    x_23: Annotated[
-        float, Field(ge=0, le=4, description="Measured reactance from secondary to tertiary windings")
-    ]
-    r_13: Annotated[
-        float, Field(ge=0, le=4, description="Measured resistance from primary to tertiary windings")
-    ]
-    x_13: Annotated[
-        float, Field(ge=0, le=4, description="Measured reactance from primary to tertiary windings")
-    ]
+    r_12: Annotated[float, Field(description="Measured resistance from primary to secondary windings")]
+    x_12: Annotated[float, Field(description="Measured reactance from primary to secondary windings")]
+    r_23: Annotated[float, Field(description="Measured resistance from secondary to tertiary windings")]
+    x_23: Annotated[float, Field(description="Measured reactance from secondary to tertiary windings")]
+    r_13: Annotated[float, Field(description="Measured resistance from primary to tertiary windings")]
+    x_13: Annotated[float, Field(description="Measured reactance from primary to tertiary windings")]
     base_power_12: Annotated[
         float, Field(gt=0, description="Base power (MVA) for primary-secondary windings")
     ]
@@ -339,10 +314,17 @@ class ThreeWindingTransformer(Branch):
     rating_tertiary: (
         Annotated[float | None, Field(ge=0, description="Rating (in MVA) for tertiary winding")] | None
     ) = None
+    control_objective_primary: TransformerControlObjective = TransformerControlObjective.UNDEFINED
+    control_objective_secondary: TransformerControlObjective = TransformerControlObjective.UNDEFINED
+    control_objective_tertiary: TransformerControlObjective = TransformerControlObjective.UNDEFINED
 
 
 class Transformer3W(ThreeWindingTransformer):
     """A 3-winding transformer."""
+
+    primary_group_number: WindingGroupNumber = WindingGroupNumber.UNDEFINED
+    secondary_group_number: WindingGroupNumber = WindingGroupNumber.UNDEFINED
+    tertiary_group_number: WindingGroupNumber = WindingGroupNumber.UNDEFINED
 
     @classmethod
     def example(cls) -> "Transformer3W":
@@ -390,6 +372,9 @@ class Transformer3W(ThreeWindingTransformer):
             base_voltage_primary=138.0,
             base_voltage_secondary=69.0,
             base_voltage_tertiary=13.8,
+            primary_group_number=WindingGroupNumber.GROUP_0,
+            secondary_group_number=WindingGroupNumber.GROUP_1,
+            tertiary_group_number=WindingGroupNumber.GROUP_5,
         )
 
 
@@ -459,17 +444,22 @@ class PhaseShiftingTransformer3W(ThreeWindingTransformer):
             α_secondary=0.1745,
             α_tertiary=-0.0873,
             phase_angle_limits=MinMax(min=-0.5236, max=0.5236),
+            control_objective_primary=TransformerControlObjective.VOLTAGE_DISABLED,
+            control_objective_secondary=TransformerControlObjective.ACTIVE_POWER_FLOW_DISABLED,
+            control_objective_tertiary=TransformerControlObjective.REACTIVE_POWER_FLOW_DISABLED,
         )
 
 
 class Transformer2W(TwoWindingTransformer):
     """Class representing a 2-winding transformer."""
 
+    winding_group_number: WindingGroupNumber = WindingGroupNumber.UNDEFINED
+
     @classmethod
     def example(cls) -> "Transformer2W":
         return Transformer2W(
             name="Example2WTransformer",
-            rating=ActivePower(100, "MW"),
+            rating=100,
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
             active_power_flow=100,
             reactive_power_flow=100,
@@ -479,6 +469,11 @@ class Transformer2W(TwoWindingTransformer):
 
 class TapTransformer(TwoWindingTransformer):
     """Class representing a tap-changing transformer."""
+
+    winding_group_number: WindingGroupNumber = WindingGroupNumber.UNDEFINED
+    control_objective: TransformerControlObjective = TransformerControlObjective.UNDEFINED
+    rating_b: Annotated[float, Field(description="Second thermal rating of the transformer.")] | None = None
+    rating_c: Annotated[float, Field(description="Third thermal rating of the transformer.")] | None = None
 
     tap: Annotated[
         NonNegativeFloat,
@@ -497,7 +492,7 @@ class TapTransformer(TwoWindingTransformer):
         return TapTransformer(
             name="ExampleTapTransformer",
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
-            rating=ActivePower(100, "MW"),
+            rating=100,
             active_power_flow=50.0,
             reactive_power_flow=10.0,
             primary_shunt=Complex(real=0.0, imag=0.0),
@@ -507,6 +502,10 @@ class TapTransformer(TwoWindingTransformer):
 
 class PhaseShiftingTransformer(TwoWindingTransformer):
     """Class representing a phase-shifting transformer."""
+
+    control_objective: TransformerControlObjective = TransformerControlObjective.UNDEFINED
+    rating_b: Annotated[float, Field(description="Second thermal rating of the transformer.")] | None = None
+    rating_c: Annotated[float, Field(description="Third thermal rating of the transformer.")] | None = None
 
     tap: Annotated[
         NonNegativeFloat,
@@ -527,7 +526,7 @@ class PhaseShiftingTransformer(TwoWindingTransformer):
         return PhaseShiftingTransformer(
             name="ExamplePhaseShiftingTransformer",
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
-            rating=ActivePower(100, "MW"),
+            rating=100,
             active_power_flow=50.0,
             reactive_power_flow=10.0,
             primary_shunt=Complex(real=0.0, imag=0.0),
@@ -790,6 +789,10 @@ class TwoTerminalVSCLine(TwoTerminalHVDCLine):
     modeling a DC network, see TModelHVDCLine.
     """
 
+    # Override parent's required `loss` field to be optional with default.
+    # VSC lines use converter_loss_from/to instead of generic loss.
+    loss: InputOutputCurve = LinearCurve(0.0)
+
     active_power_flow: Annotated[
         float,
         Field(description="Initial condition of active power flowing from the from-bus to the to-bus in DC"),
@@ -941,7 +944,7 @@ class TwoTerminalVSCLine(TwoTerminalHVDCLine):
             available=True,
             arc=Arc(from_to=DCBus.example(), to_from=DCBus.example()),
             active_power_flow=400.0,
-            rating=ActivePower(500.0, "MW"),
+            rating=500,
             active_power_limits_from=MinMax(min=0.0, max=500.0),
             active_power_limits_to=MinMax(min=-500.0, max=0.0),
             g=0.001,
@@ -950,8 +953,8 @@ class TwoTerminalVSCLine(TwoTerminalHVDCLine):
             ac_setpoint_from=1.05,
             dc_setpoint_to=-400.0,
             ac_setpoint_to=1.0,
-            rating_from=ActivePower(500.0, "MW"),
-            rating_to=ActivePower(500.0, "MW"),
+            rating_from=500,
+            rating_to=500,
             reactive_power_limits_from=MinMax(min=-200.0, max=200.0),
             reactive_power_limits_to=MinMax(min=-200.0, max=200.0),
             loss=LinearCurve(0.0),

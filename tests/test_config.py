@@ -2,7 +2,7 @@
 
 import pytest
 
-from r2x_sienna.config import SiennaConfig
+from r2x_sienna.plugin_config import SiennaConfig
 
 
 def test_sienna_config_creation_single_year():

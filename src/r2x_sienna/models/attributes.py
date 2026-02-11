@@ -14,7 +14,7 @@ class GeographicInfo(SupplementalAttribute):
 
     @classmethod
     def example(cls) -> "GeographicInfo":
-        return GeographicInfo(geo_json=GeoLocation(Latitude=10.5, Longitude=-100))
+        return GeographicInfo(geo_json=GeoLocation(coordinates=[10.5, -100], type="Point"))
 
 
 class ImpedanceCorrectionData(SupplementalAttribute):

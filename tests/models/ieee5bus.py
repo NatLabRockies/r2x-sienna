@@ -9,7 +9,7 @@ from infrasys.time_series_models import SingleTimeSeries
 from infrasys.value_curves import InputOutputCurve
 
 from r2x_core.system import System
-from r2x_sienna.config import SiennaConfig
+from r2x_sienna.plugin_config import SiennaConfig
 from r2x_sienna.exporter import to_psy
 from r2x_sienna.models.enums import PrimeMoversType, StorageTechs, ThermalFuels
 from r2x_sienna.models import (

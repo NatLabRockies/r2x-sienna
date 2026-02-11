@@ -3,6 +3,7 @@ import copy
 import json
 import shutil
 import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import IO, Any
@@ -24,12 +25,14 @@ from infrasys.supplemental_attribute_manager import SupplementalAttributeManager
 from infrasys.time_series_manager import TimeSeriesManager
 from infrasys.time_series_metadata_store import TimeSeriesMetadataStore
 from loguru import logger
-from r2x_core import BaseParser, DataFile, DataStore, Err, Ok, ParserError, Result
+from r2x_core import Plugin, System, create_component
+from rust_ok import Err, Ok, Result
 
 from r2x_sienna.models.enums import ReserveDirection, ReserveType
 from r2x_sienna.models.services import VariableReserve
 
-from .config import SiennaConfig
+from .plugin_config import SiennaConfig
+from .upgrader.data_upgrader import run_sienna_upgrades
 
 PARAMETRIZED_TYPES = {
     "ReserveDown": {"direction": ReserveDirection.DOWN},
@@ -37,52 +40,94 @@ PARAMETRIZED_TYPES = {
 }
 
 
-class SiennaParser(BaseParser):
-    """Sienna parser class."""
+class SiennaParser(Plugin[SiennaConfig]):
+    """Sienna parser class with explicit SiennaConfig type hint."""
 
-    def __init__(
-        self,
-        config: SiennaConfig | None = None,
-        *,
-        data_store: DataStore | None = None,
-        name: str | None = None,
-        auto_add_composed_components: bool = True,
-        skip_validation: bool = False,
-    ) -> None:
-        """Initialize Sienna parser."""
-        super().__init__(
-            config,
-            data_store=data_store,
-            name=name,
-            auto_add_composed_components=auto_add_composed_components,
-            skip_validation=skip_validation,
-        )
-
-    def prepare_data(self) -> Result[None, ParserError]:
-        """Prepare and normalize configuration and time-related data.
-
-        Initializes internal data structures required for component building.
-        Supports reading from stdin_payload when available (r2x-core 0.1.0+).
-
-        Returns
-        -------
-        Result[None, ParserError]
-            Ok() on success, Err() with ParserError on failure
-        """
-        self.skip_validation: bool = getattr(self.config, "skip_validation", False)
+    def __init__(self) -> None:
+        """Initialize with internal state only."""
+        self._use_stdin: bool = False
         self.data_information: dict[str, Any] = {}
         self.system_information: dict[str, Any] = {}
         self.component_fields: dict[str, Any] = {}
+        self.uuid_map: dict[str, dict] = {}
+        self.attribute_manager: dict | None = None
 
-        # Store stdin_payload if provided (for r2x-core 0.1.0+ pipeline support)
+    def on_prepare(self) -> Result[None, str]:
+        """Prepare and normalize configuration and time-related data.
+
+        Initializes internal data structures required for component building.
+        Supports reading from stdin_payload when available (r2x-core 0.2.0+).
+
+        Returns
+        -------
+        Result[None, str]
+            Ok(None) on success, Err() with error message on failure
+        """
+        self.skip_validation: bool = getattr(self.config, "skip_validation", False)
+
+        # Store stdin_payload if provided (for r2x-core pipeline support)
         stdin_payload: IO[str] | IO[bytes] | str | bytes | None = getattr(self, "_stdin_payload", None)
         self._use_stdin = stdin_payload is not None
-        if self._use_stdin:
-            logger.debug("Sienna parser will read system data from stdin")
-        else:
-            logger.debug("Sienna parser will read system data from json_path")
 
-        return Ok()
+        config = self._require_config()
+        logger.info(
+            "Preparing SiennaParser (system_name={}, skip_validation={}, source={})",
+            config.system_name or "<default>",
+            self.skip_validation,
+            "stdin" if self._use_stdin else config.json_path or "<none>",
+        )
+
+        return Ok(None)
+
+    def on_upgrade(self) -> Result[System | None, str]:
+        """Run Sienna file upgrades before building system.
+
+        Returns
+        -------
+        Result[System | None, str]
+            Ok(None) on success (no early system return), Err() with error message on failure
+        """
+        config = self._require_config()
+        logger.debug("Running Sienna data upgrades for: {}", config.json_path or "<stdin>")
+        t0 = time.perf_counter()
+        result = run_sienna_upgrades(json_path=config.json_path, ctx=self.ctx)
+        elapsed = time.perf_counter() - t0
+        if result.is_err():
+            logger.error("Sienna upgrades failed after {:.2f}s: {}", elapsed, result.err())
+            return Err(str(result.err()))
+        logger.debug("Sienna upgrades completed in {:.2f}s", elapsed)
+        return Ok(None)
+
+    def on_build(self) -> Result[System, str]:
+        """Build the System from parsed data.
+
+        Returns
+        -------
+        Result[System, str]
+            Ok(system) on success, Err() with error message on failure
+        """
+        try:
+            t0 = time.perf_counter()
+            system_name = self.config.system_name or "Sienna"
+            logger.info("Building Sienna system '{}'", system_name)
+            system = System(name=system_name, system_base=self.config.system_base_power or None)
+            self._ctx.system = system
+
+            self._parse_components()
+            self._parse_supplemental_attributes()
+            self._h5_manager()
+
+            elapsed = time.perf_counter() - t0
+            component_count = sum(1 for _ in system._component_mgr.iter_all())
+            logger.info(
+                "Sienna system '{}' built in {:.2f}s ({} components)",
+                system_name,
+                elapsed,
+                component_count,
+            )
+            return Ok(system)
+        except Exception as e:
+            return Err(f"Failed to build system: {e}")
 
     def _require_config(self) -> SiennaConfig:
         """Return the parser config with a concrete type check."""
@@ -91,43 +136,26 @@ class SiennaParser(BaseParser):
             raise ValueError("SiennaParser requires a SiennaConfig instance")
         return config
 
-    def build_system_components(self) -> Result[None, ParserError]:
-        """Build and add components to the system."""
-        self._parse_components()
-        self._parse_supplemental_attributes()
-        return Ok(None)
-
-    def build_time_series(self) -> Result[None, ParserError]:
-        """Build and add time series to the system."""
-        try:
-            self._h5_manager()
-            return Ok(None)
-        except Exception as e:
-            return Err(ParserError(f"Failed to build time series: {e}"))
-
     def _parse_components(self) -> None:
         """Create a dictionary by component type."""
-        logger.info("Parsing Sienna system")
-        self.uuid_map: dict[str, dict] = {}
-
+        logger.info("Parsing Sienna system components")
         # Load system data from stdin or from json_path
         stdin_payload: IO[str] | IO[bytes] | str | bytes | None = getattr(self, "_stdin_payload", None)
         if self._use_stdin:
             logger.debug("Reading system data from stdin_payload")
-            # Parse stdin_payload - could be IO, str, or bytes
             if stdin_payload is None:
                 raise ValueError("stdin payload not available despite _use_stdin being True")
 
+            t0 = time.perf_counter()
             if isinstance(stdin_payload, (str, bytes)):
                 json_str = stdin_payload.decode() if isinstance(stdin_payload, bytes) else stdin_payload
                 system_json = json.loads(json_str)
             else:
-                # It's a file-like object
                 content = stdin_payload.read()
                 json_str = content.decode() if isinstance(content, bytes) else content
                 system_json = json.loads(json_str)
+            logger.debug("Parsed stdin JSON in {:.2f}s", time.perf_counter() - t0)
 
-            # Extract the system structure - stdin could provide "system" wrapper or direct data
             if "system" in system_json:
                 system_data = system_json["system"]
             else:
@@ -140,18 +168,40 @@ class SiennaParser(BaseParser):
                 raise ValueError("json_path must be specified in SiennaConfig when not reading from stdin")
 
             sys_path = Path(config.json_path)
-            data_file = DataFile(name="system", fpath=sys_path)
-            self.store.add_data(data_file)
-            system_data = self.store.read_data(name="system")
+            file_size_mb = sys_path.stat().st_size / (1024 * 1024)
+            logger.debug("Loading JSON from {} ({:.1f} MB)", sys_path, file_size_mb)
+            t0 = time.perf_counter()
+            with open(sys_path) as f:
+                system_data = json.load(f)
+            logger.debug("JSON parsed in {:.2f}s", time.perf_counter() - t0)
             json_data = system_data.pop("data")
 
         component_data = json_data.pop("components")
         self.data_information = json_data
+        logger.info("Loaded {} raw components from source data", len(component_data))
+
+        logger.debug("Running first pass: normalizing metadata and building UUID map")
+        t0 = time.perf_counter()
         components = self._first_pass(component_data)
+        logger.debug(
+            "First pass complete in {:.2f}s ({} UUIDs mapped, {} component types seen)",
+            time.perf_counter() - t0,
+            len(self.uuid_map),
+            len(self.component_fields),
+        )
+
         self.system_information = system_data
         self.attribute_manager = copy.deepcopy(json_data.get("supplemental_attribute_manager"))
+
+        logger.debug("Resolving component cross-references")
+        t0 = time.perf_counter()
         components_solved = self._resolve_component_references(components)
+        logger.debug("Reference resolution complete in {:.2f}s", time.perf_counter() - t0)
+
+        logger.debug("Deserializing components into system")
+        t0 = time.perf_counter()
         self._deserialize_components(components_solved)
+        logger.debug("Component deserialization complete in {:.2f}s", time.perf_counter() - t0)
 
     def _first_pass(self, obj, parent_metadata=None):
         if isinstance(obj, dict):
@@ -166,17 +216,23 @@ class SiennaParser(BaseParser):
 
             if "__metadata__" in obj and parent_metadata is None and current_internal:
                 metadata = obj["__metadata__"]
-                if metadata["type"] not in self.component_fields:
-                    self.component_fields[metadata["type"]] = set(obj.keys())
+                comp_type = metadata.get("type", "Unknown")
+                if comp_type not in self.component_fields:
+                    self.component_fields[comp_type] = set(obj.keys())
+                    logger.trace("First pass: new component type '{}' with fields: {}", comp_type, obj.keys())
                 obj["__metadata__"] = {
                     "module": "r2x_sienna.models",
-                    "type": metadata.get("type"),
+                    "type": comp_type,
                     "serialized_type": "base",
                 }
                 if parameters := metadata.get("parameters"):
                     for parameter in parameters:
                         if parameter not in PARAMETRIZED_TYPES:
-                            breakpoint()
+                            logger.warning("Unknown parametrized type: {}", parameter)
+                            continue
+                        logger.trace(
+                            "First pass: applying parametrized type '{}' to '{}'", parameter, comp_type
+                        )
                         obj.update(PARAMETRIZED_TYPES[parameter])
 
             if "__metadata__" in obj and not current_internal:
@@ -196,6 +252,11 @@ class SiennaParser(BaseParser):
                         "type": parent_metadata.get("type", "UnknownType"),
                         "module": parent_metadata.get("module", "r2x_sienna.models"),
                     }
+                    logger.trace(
+                        "First pass: mapped composed ref uuid={} -> type={}",
+                        current_uuid[:8] if isinstance(current_uuid, str) else current_uuid,
+                        parent_metadata.get("type", "UnknownType"),
+                    )
                 return transformed
 
             current_metadata = obj.get("__metadata__")
@@ -204,44 +265,60 @@ class SiennaParser(BaseParser):
 
             if current_uuid:
                 obj["uuid"] = UUID(current_uuid)
+                resolved_type = (
+                    current_metadata.get("type", "UnknownType") if current_metadata else "UnknownType"
+                )
                 self.uuid_map[current_uuid] = {
-                    "type": current_metadata.get("type", "UnknownType")
-                    if current_metadata
-                    else "UnknownType",
+                    "type": resolved_type,
                     "module": current_metadata.get("module", "r2x_sienna.models")
                     if current_metadata
                     else "r2x_sienna.models",
                 }
+                logger.trace(
+                    "First pass: registered uuid={} as type={}",
+                    current_uuid[:8] if isinstance(current_uuid, str) else current_uuid,
+                    resolved_type,
+                )
 
         elif isinstance(obj, list):
             obj = [self._first_pass(item, parent_metadata) for item in obj]
 
         return obj
 
-    def _parse_supplemental_attributes(self):
+    def _parse_supplemental_attributes(self) -> None:
         if not self.attribute_manager:
-            logger.warning("Supplemental attributes not found on the system.")
+            logger.debug("No supplemental attributes found on the system, skipping")
             return
+
+        t0 = time.perf_counter()
         self.system._supplemental_attr_mgr = SupplementalAttributeManager(self.system._con, initialize=False)
-        logger.debug("Parsing supplemental attributes")
         attributes = self._first_pass(self.attribute_manager["attributes"])
+        logger.debug("Deserializing {} supplemental attributes", len(attributes))
+
         cached_types = CachedTypeHelper()
         for sa_dict in attributes:
             metadata = SerializedTypeMetadata.validate_python(sa_dict[TYPE_METADATA])
             supplemental_attribute_type = cached_types.get_type(metadata)
             values = {x: y for x, y in sa_dict.items() if x != TYPE_METADATA}
+            logger.trace("Deserializing supplemental attribute: {}", supplemental_attribute_type.__name__)
             attr = supplemental_attribute_type(**values)
             self.system._supplemental_attr_mgr.add(None, attr, deserialization_in_progress=True)
             cached_types.add_deserialized_type(supplemental_attribute_type)
 
+        associations = self.attribute_manager["associations"]
         cursor = self.system._con.cursor()
         query = f"INSERT INTO {TABLE_NAME}"
         query += "(attribute_uuid, attribute_type, component_uuid, component_type) "
         query += "VALUES(:attribute_uuid, :attribute_type, :component_uuid, :component_type)"
-        cursor.executemany(query, self.attribute_manager["associations"])
+        cursor.executemany(query, associations)
         cursor.close()
         self.system._con.commit()
-        return
+        logger.info(
+            "Attached {} supplemental attributes with {} associations in {:.2f}s",
+            len(attributes),
+            len(associations),
+            time.perf_counter() - t0,
+        )
 
     def _resolve_component_references(self, obj):
         if isinstance(obj, dict):
@@ -262,15 +339,25 @@ class SiennaParser(BaseParser):
     def _deserialize_components(self, components: list[dict[str, Any]]) -> None:
         """Deserialize components from dictionaries and add them to the system."""
         cached_types = CachedTypeHelper()
+        logger.debug("Deserializing {} component dicts (first pass: simple types)", len(components))
         skipped_types = self._deserialize_components_first_pass(components, cached_types)
         if skipped_types:
+            skipped_count = sum(len(v) for v in skipped_types.values())
+            logger.debug(
+                "First pass deferred {} components across {} types, running nested resolution",
+                skipped_count,
+                len(skipped_types),
+            )
             self._deserialize_components_nested(skipped_types, cached_types)
+        else:
+            logger.debug("All components deserialized in first pass")
 
     def _deserialize_components_first_pass(
         self, components: list[dict], cached_types: CachedTypeHelper
     ) -> dict[type, list[dict[str, Any]]]:
-        deserialized_types = set()
+        deserialized_types: set[type] = set()
         skipped_types: dict[type, list[dict[str, Any]]] = defaultdict(list)
+        created_count = 0
         for component_dict in components:
             component = self._try_deserialize_component(component_dict, cached_types)
             if component is None:
@@ -280,8 +367,16 @@ class SiennaParser(BaseParser):
                 skipped_types[component_type].append(component_dict)
             else:
                 deserialized_types.add(type(component))
+                created_count += 1
 
         cached_types.add_deserialized_types(deserialized_types)
+        logger.debug(
+            "First pass: deserialized {} components ({} types), skipped {} ({} types)",
+            created_count,
+            len(deserialized_types),
+            sum(len(v) for v in skipped_types.values()),
+            len(skipped_types),
+        )
         return skipped_types
 
     def _deserialize_components_nested(
@@ -289,9 +384,16 @@ class SiennaParser(BaseParser):
         skipped_types: dict[type, list[dict[str, Any]]],
         cached_types: CachedTypeHelper,
     ) -> None:
+        failed_components: list[tuple[type, dict[str, Any]]] = []
         max_iterations = len(skipped_types)
-        for _ in range(max_iterations):
-            deserialized_types = set()
+        logger.debug(
+            "Nested deserialization: {} deferred types, max {} iterations",
+            len(skipped_types),
+            max_iterations,
+        )
+
+        for iteration in range(max_iterations):
+            deserialized_types: set[type] = set()
             for component_type, components in skipped_types.items():
                 component = self._try_deserialize_component(components[0], cached_types)
                 if component is None:
@@ -299,25 +401,56 @@ class SiennaParser(BaseParser):
                 if len(components) > 1:
                     for component_dict in components[1:]:
                         component = self._try_deserialize_component(component_dict, cached_types)
-                        assert component is not None
+                        if component is None:
+                            failed_components.append((component_type, component_dict))
                 deserialized_types.add(component_type)
 
             for component_type in deserialized_types:
                 skipped_types.pop(component_type)
             cached_types.add_deserialized_types(deserialized_types)
 
+            resolved_names = [t.__name__ for t in deserialized_types]
+            logger.debug(
+                "Nested iteration {}: resolved {} types ({}), {} remaining",
+                iteration + 1,
+                len(deserialized_types),
+                ", ".join(resolved_names) if resolved_names else "none",
+                len(skipped_types),
+            )
+            if not skipped_types:
+                break
+
+        if failed_components:
+            # Log details about each failed component
+            for comp_type, comp_dict in failed_components:
+                name = comp_dict.get("name", "<unnamed>")
+                logger.error(
+                    f"Failed to deserialize {comp_type.__name__} component '{name}'. "
+                    "This may be due to invalid data that wasn't caught by the upgrader."
+                )
+
+            failed_names = [c[1].get("name", "<unnamed>") for c in failed_components]
+            msg = (
+                f"Failed to deserialize {len(failed_components)} component(s): {failed_names}. "
+                "Check the log for details. This typically indicates data validation errors "
+                "that should be fixed in the upgrader (see upgrade_steps.py)."
+            )
+            raise ValueError(msg)
+
         if skipped_types:
             msg = f"Bug: still have types remaining to be deserialized: {skipped_types.keys()}"
             raise Exception(msg)
 
     def _try_deserialize_component(self, component: dict[str, Any], cached_types: CachedTypeHelper) -> Any:
-        actual_component = None
         values = self._deserialize_fields(component, cached_types)
         if values is None:
             return None
 
         metadata = SerializedTypeMetadata.validate_python(component[TYPE_METADATA])
         component_type = cached_types.get_type(metadata)
+        component_name = values.get("name", "<unnamed>")
+        logger.trace("Deserializing {} '{}'", component_type.__name__, component_name)
+
         if component_type == VariableReserve:
             values["reserve_type"] = ReserveType.SPINNING
 
@@ -325,23 +458,63 @@ class SiennaParser(BaseParser):
             values["from_bus"] = values["arc"].from_to
             values["to_bus"] = values["arc"].to_from
 
-        actual_component = self.create_component(component_type, **values)
-        self.system._components.add(actual_component, deserialization_in_progress=True)
+        result = create_component(component_type, skip_validation=self.skip_validation, **values)
+        if result.is_err():
+            logger.warning(
+                "Failed to create component {} '{}': {}",
+                component_type.__name__,
+                component_name,
+                result.err(),
+            )
+            return None
+        actual_component = result.ok()
+        if actual_component is not None:
+            self.system._components.add(actual_component, deserialization_in_progress=True)
+            logger.trace(
+                "Created {} '{}' (uuid={})",
+                component_type.__name__,
+                component_name,
+                getattr(actual_component, "uuid", "?"),
+            )
         return actual_component
 
     def _deserialize_fields(self, component: dict[str, Any], cached_types: CachedTypeHelper) -> dict | None:
-        values = {}
+        values: dict[str, Any] = {}
+        comp_type_hint = (
+            component.get(TYPE_METADATA, {}).get("type", "?")
+            if isinstance(component.get(TYPE_METADATA), dict)
+            else "?"
+        )
         for field, value in component.items():
             if isinstance(value, dict) and TYPE_METADATA in value:
                 metadata = SerializedTypeMetadata.validate_python(value[TYPE_METADATA])
                 if isinstance(metadata, SerializedComponentReference):
+                    logger.trace(
+                        "Field '{}' on {}: resolving composed ref uuid={}",
+                        field,
+                        comp_type_hint,
+                        metadata.uuid,
+                    )
                     composed_value = self._deserialize_composed_value(metadata, cached_types)
                     if composed_value is None:
+                        logger.trace(
+                            "Field '{}' on {}: composed ref not yet available, deferring",
+                            field,
+                            comp_type_hint,
+                        )
                         return None
                     values[field] = composed_value
                 elif isinstance(metadata, SerializedQuantityType):
                     quantity_type = cached_types.get_type(metadata)
                     values[field] = quantity_type(value=value["value"], units=value["units"])
+                    logger.trace(
+                        "Field '{}' on {}: deserialized quantity {}={} {}",
+                        field,
+                        comp_type_hint,
+                        quantity_type.__name__,
+                        value["value"],
+                        value["units"],
+                    )
                 else:
                     msg = f"Bug: unhandled type: {field=} {value=}"
                     raise NotImplementedError(msg)
@@ -354,8 +527,14 @@ class SiennaParser(BaseParser):
             ):
                 metadata = SerializedTypeMetadata.validate_python(value[0][TYPE_METADATA])
                 assert isinstance(metadata, SerializedComponentReference)
+                logger.trace(
+                    "Field '{}' on {}: resolving composed list ({} items)", field, comp_type_hint, len(value)
+                )
                 composed_values = self._deserialize_composed_list(value, cached_types)
                 if composed_values is None:
+                    logger.trace(
+                        "Field '{}' on {}: composed list not yet available, deferring", field, comp_type_hint
+                    )
                     return None
                 values[field] = composed_values
             elif field != TYPE_METADATA:
@@ -368,13 +547,20 @@ class SiennaParser(BaseParser):
     ) -> Any:
         component_type = cached_types.get_type(metadata)
         if cached_types.allowed_to_deserialize(component_type):
-            return self.system._components.get_by_uuid(metadata.uuid)
+            resolved = self.system._components.get_by_uuid(metadata.uuid)
+            logger.trace("Resolved composed ref: {} uuid={}", component_type.__name__, metadata.uuid)
+            return resolved
+        logger.trace(
+            "Composed ref deferred: {} uuid={} (type not yet deserialized)",
+            component_type.__name__,
+            metadata.uuid,
+        )
         return None
 
     def _deserialize_composed_list(
         self, components: list[dict[str, Any]], cached_types: CachedTypeHelper
     ) -> list[Any] | None:
-        deserialized_components = []
+        deserialized_components: list[Any] = []
         for component in components:
             metadata = SerializedTypeMetadata.validate_python(component[TYPE_METADATA])
             assert isinstance(metadata, SerializedComponentReference)
@@ -382,16 +568,20 @@ class SiennaParser(BaseParser):
             if cached_types.allowed_to_deserialize(component_type):
                 deserialized_components.append(self.system._components.get_by_uuid(metadata.uuid))
             else:
+                logger.trace(
+                    "Composed list deferred: {} uuid={} not yet available",
+                    component_type.__name__,
+                    metadata.uuid,
+                )
                 return None
+        logger.trace("Resolved composed list: {} items", len(deserialized_components))
         return deserialized_components
 
-    def _h5_manager(self):
+    def _h5_manager(self) -> None:
         """Load HDF5 time series data."""
         try:
             if "time_series_storage_file" not in self.data_information:
-                logger.warning(
-                    "No time series storage file specified in data_information. Skipping time series loading."
-                )
+                logger.debug("No time_series_storage_file in data_information, skipping HDF5 loading")
                 return
 
             config = self._require_config()
@@ -410,10 +600,12 @@ class SiennaParser(BaseParser):
                 h5_path = h5_dir / time_series_filename
 
             if not h5_path.exists():
-                logger.warning(f"Time series file not found: {h5_path}. Skipping time series loading.")
+                logger.warning("Time series file not found: {}. Skipping HDF5 loading.", h5_path)
                 return
 
-            logger.info(f"Found time series file: {h5_path}")
+            file_size_mb = h5_path.stat().st_size / (1024 * 1024)
+            logger.info("Loading HDF5 time series from {} ({:.1f} MB)", h5_path, file_size_mb)
+            t0 = time.perf_counter()
             storage = create_temporary_h5_storage(h5_path)
             conn = storage.get_metadata_store()
             metadata_store = TimeSeriesMetadataStore(con=conn, initialize=False)
@@ -421,11 +613,10 @@ class SiennaParser(BaseParser):
             metadata_store._load_metadata_into_memory()
             mgr = TimeSeriesManager(con=conn, storage=storage, metadata_store=metadata_store)
             self.system._time_series_mgr = mgr
-
-            logger.info("Successfully loaded time series data")
+            logger.info("HDF5 time series loaded in {:.2f}s", time.perf_counter() - t0)
 
         except Exception as e:
-            logger.warning(f"Failed to load time series data: {e}")
+            logger.warning("Failed to load time series data: {}", e)
 
 
 def create_temporary_h5_storage(source_h5_path):
@@ -446,11 +637,14 @@ def create_temporary_h5_storage(source_h5_path):
     temp_dir = Path(tempfile.mkdtemp())
     atexit.register(lambda: shutil.rmtree(temp_dir, ignore_errors=True))
     dest_h5_path = temp_dir / HDF5TimeSeriesStorage.STORAGE_FILE
+    logger.trace("Copying HDF5 from {} to temp {}", source_h5_path, dest_h5_path)
+    t0 = time.perf_counter()
     with h5py.File(source_h5_path, "r") as src_file:
         with h5py.File(dest_h5_path, "w") as dest_file:
             for key in src_file.keys():
                 src_file.copy(key, dest_file)
+            logger.trace("Copied {} HDF5 groups to temp storage", len(list(src_file.keys())))
 
-    logger.debug("Creating temporary directory at {}", temp_dir)
+    logger.debug("Created temporary HDF5 storage at {} in {:.2f}s", temp_dir, time.perf_counter() - t0)
     storage = HDF5TimeSeriesStorage(directory=temp_dir)
     return storage

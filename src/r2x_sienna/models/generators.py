@@ -9,7 +9,7 @@ from r2x_core import Unit
 from r2x_sienna.models.load import InterruptiblePowerLoad, PowerLoad
 from r2x_sienna.units import ActivePower, ApparentPower
 
-from .core import Device
+from .core import Device, StaticInjection
 from .costs import (
     HydroGenerationCost,
     HydroReservoirCost,
@@ -31,7 +31,27 @@ from .named_tuples import InputOutput, MinMax, StartShut, StartUpStages, Turbine
 from .topology import ACBus
 
 
-class ThermalStandard(Device):
+class Generator(StaticInjection):
+    """General type for generators."""
+
+
+class Storage(StaticInjection):
+    """General type for thermal generators."""
+
+
+class ThermalGen(Generator):
+    """General type for thermal generators."""
+
+
+class RenewableGen(Generator):
+    """Abstract class for renewable generators."""
+
+
+class HydroGen(Generator):
+    """Abstract class for Hydro generators"""
+
+
+class ThermalStandard(ThermalGen):
     """Thermal Standard device per PSY."""
 
     bus: Annotated[ACBus, Field(description="Bus where the generator is connected.")] | None = None
@@ -118,7 +138,7 @@ class ThermalStandard(Device):
         )
 
 
-class ThermalMultiStart(Device):
+class ThermalMultiStart(ThermalGen):
     """A thermal generator, such as a fossil fuel or nuclear generator, that can start-up again from a *hot*, *warm*, or *cold* state.
 
     ThermalMultiStart has a detailed representation of the start-up process based on the time elapsed since the last shut down, as well as a detailed shut-down process. The model is based on "Tight and Compact MILP Formulation for the Thermal Unit Commitment Problem." For a simplified representation of the start-up and shut-down processes, see ThermalStandard.
@@ -239,10 +259,6 @@ class ThermalMultiStart(Device):
             time_at_status=float("inf"),
             must_run=False,
         )
-
-
-class RenewableGen(Device):
-    """Abstract class for renewable generators."""
 
 
 class RenewableDispatch(RenewableGen):
@@ -378,7 +394,7 @@ class RenewableNonDispatch(RenewableGen):
         )
 
 
-class SynchronousCondenser(Device):
+class SynchronousCondenser(StaticInjection):
     """A Synchronous Machine connected to the system to provide inertia or reactive power support.
 
     Components of the same type (e.g., PowerLoad) must have unique names, but components of
@@ -429,7 +445,7 @@ class SynchronousCondenser(Device):
         )
 
 
-class EnergyReservoirStorage(Device):
+class EnergyReservoirStorage(Storage):
     """An energy storage device, modeled as a generic energy reservoir.
 
     This is suitable for modeling storage charging and discharging with average efficiency losses,
@@ -557,7 +573,7 @@ class EnergyReservoirStorage(Device):
         )
 
 
-class HybridSystem(Device):
+class HybridSystem(StaticInjection):
     """A Hybrid System that includes a combination of renewable generation, load, thermal
     generation and/or energy storage.
 
@@ -726,10 +742,6 @@ class HybridSystem(Device):
             interconnection_efficiency=InputOutput(input=0.98, output=0.98),
             category="hybrid",
         )
-
-
-class HydroGen(Device):
-    """Abstract class for Hydro generators"""
 
 
 class HydroDispatch(HydroGen):
@@ -1210,6 +1222,18 @@ class HydroReservoir(Device):
         ReservoirDataType,
         Field(description="Reservoir data type, which defines units for level parameters."),
     ] = ReservoirDataType.USABLE_VOLUME
+    upstream_turbines: Annotated[
+        list["HydroTurbine | HydroPumpTurbine"],
+        Field(description="HydroTurbine(s) or HydroPumpTurbine(s) upstream of this reservoir."),
+    ] = []
+    downstream_turbines: Annotated[
+        list["HydroTurbine | HydroPumpTurbine"],
+        Field(description="HydroTurbine(s) or HydroPumpTurbine(s) downstream of this reservoir."),
+    ] = []
+    upstream_reservoirs: Annotated[
+        list["HydroReservoir"],
+        Field(description="HydroReservoir(s) upstream of this reservoir."),
+    ] = []
 
     @classmethod
     def example(cls) -> "HydroReservoir":
@@ -1318,6 +1342,9 @@ class HydroTurbine(HydroGen):
         list[HydroReservoir],
         Field(description="HydroReservoir(s) that this component is connected to."),
     ] = []
+    prime_mover_type: Annotated[
+        PrimeMoversType, Field(description="Prime mover technology according to EIA 923.")
+    ]
 
     @classmethod
     def example(cls) -> "HydroTurbine":
@@ -1339,6 +1366,7 @@ class HydroTurbine(HydroGen):
             outflow_limits=MinMax(min=5.0, max=100.0),
             efficiency=0.92,
             turbine_type=HydroTurbineType.FRANCIS,
+            prime_mover_type=PrimeMoversType.OT,
             conversion_factor=1.0,
             reservoirs=[reservoir],
             category="hydro_turbine",
@@ -1391,13 +1419,13 @@ class HydroPumpTurbine(HydroGen):
         Field(description="Turbine/Pump outflow limits in m3/s. Set to None if not applicable."),
     ] = None
     head_reservoir: Annotated[
-        "HydroReservoir",
+        "HydroReservoir | None",
         Field(description="Head HydroReservoir that this component is connected to."),
-    ]
+    ] = None
     tail_reservoir: Annotated[
-        "HydroReservoir",
+        "HydroReservoir | None",
         Field(description="Tail HydroReservoir that this component is connected to."),
-    ]
+    ] = None
     powerhouse_elevation: Annotated[
         float,
         Unit("m"),

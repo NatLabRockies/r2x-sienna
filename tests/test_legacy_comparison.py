@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 from infrasys import System
-from r2x_core.store import DataStore
+from r2x_core import DataStore, PluginContext
 
-from r2x_sienna.config import SiennaConfig
+from r2x_sienna.plugin_config import SiennaConfig
 from r2x_sienna.parser import SiennaParser
 
 
@@ -79,13 +79,14 @@ def sienna_config(test_data_path: Path) -> SiennaConfig:
 @pytest.fixture
 def new_system(sienna_config: SiennaConfig, data_store: DataStore) -> System:
     """Build system using new parser."""
-    parser = SiennaParser(
+    ctx = PluginContext(
         config=sienna_config,
-        data_store=data_store,
-        name="legacy_comparison_test",
+        store=data_store,
         skip_validation=sienna_config.skip_validation,
     )
-    return parser.build_system()
+    parser = SiennaParser.from_context(ctx)
+    result_ctx = parser.run()
+    return result_ctx.system
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from r2x_core import DataStore
+from r2x_core import DataStore, PluginContext
 
 from r2x_sienna import (
     SiennaConfig,
@@ -54,47 +54,27 @@ def sienna_config_pjm(data_folder):
 @pytest.fixture
 def rts_system(sienna_config_rts, data_store):
     """Load RTS GMLC system from test data."""
-    parser = SiennaParser(
+    ctx = PluginContext(
         config=sienna_config_rts,
-        data_store=data_store,
-        name="RTS_GMLC_Test",
+        store=data_store,
         skip_validation=sienna_config_rts.skip_validation,
     )
-    return parser.build_system()
+    parser = SiennaParser.from_context(ctx)
+    result_ctx = parser.run()
+    return result_ctx.system
 
 
 @pytest.fixture
 def pjm_system(sienna_config_pjm, data_store):
     """Load PJM 5-bus system from test data."""
-    parser = SiennaParser(
+    ctx = PluginContext(
         config=sienna_config_pjm,
-        data_store=data_store,
-        name="PJM_5Bus_Test",
+        store=data_store,
         skip_validation=sienna_config_pjm.skip_validation,
     )
-    return parser.build_system()
-
-
-@pytest.fixture
-def rts_parser(sienna_config_rts, data_store):
-    """Create RTS parser for tests that need both parser and system."""
-    return SiennaParser(
-        config=sienna_config_rts,
-        data_store=data_store,
-        name="RTS_GMLC_Test",
-        skip_validation=sienna_config_rts.skip_validation,
-    )
-
-
-@pytest.fixture
-def pjm_parser(sienna_config_pjm, data_store):
-    """Create PJM parser for tests that need both parser and system."""
-    return SiennaParser(
-        config=sienna_config_pjm,
-        data_store=data_store,
-        name="PJM_5Bus_Test",
-        skip_validation=sienna_config_pjm.skip_validation,
-    )
+    parser = SiennaParser.from_context(ctx)
+    result_ctx = parser.run()
+    return result_ctx.system
 
 
 @pytest.fixture
@@ -159,18 +139,16 @@ def test_get_component_output_fields():
     assert len(fields) > 0
 
 
-def test_to_psy_serialization_rts(sienna_config_rts, rts_system, rts_parser, tmp_path):
+def test_to_psy_serialization_rts(sienna_config_rts, rts_system, tmp_path):
     """Test full PSY serialization with RTS system."""
-
     output_file = tmp_path / "rts_system.json"
 
-    exporter = SiennaExporter(
-        sienna_config_rts,
-        rts_system,
-        output_path=output_file,
-    )
-    result = exporter.export()
-    assert result.is_ok(), f"Export failed: {result.error if result.is_err() else ''}"
+    # Update config with output path
+    config = SiennaConfig(**{**sienna_config_rts.model_dump(), "output_path": str(output_file)})
+
+    ctx = PluginContext(config=config, system=rts_system)
+    exporter = SiennaExporter.from_context(ctx)
+    _ = exporter.run()
 
     assert output_file.exists()
 
@@ -188,17 +166,16 @@ def test_to_psy_serialization_rts(sienna_config_rts, rts_system, rts_parser, tmp
         print(f"Time series data exported to {h5_file} ({file_size:.2f} MB)")
 
 
-def test_to_psy_serialization_pjm(sienna_config_pjm, pjm_system, pjm_parser, tmp_path):
+def test_to_psy_serialization_pjm(sienna_config_pjm, pjm_system, tmp_path):
     """Test full PSY serialization with PJM system."""
     output_file = tmp_path / "pjm_system.json"
 
-    exporter = SiennaExporter(
-        sienna_config_pjm,
-        pjm_system,
-        output_path=output_file,
-    )
-    result = exporter.export()
-    assert result.is_ok(), f"Export failed: {result.error if result.is_err() else ''}"
+    # Update config with output path
+    config = SiennaConfig(**{**sienna_config_pjm.model_dump(), "output_path": str(output_file)})
+
+    ctx = PluginContext(config=config, system=pjm_system)
+    exporter = SiennaExporter.from_context(ctx)
+    _ = exporter.run()
 
     assert output_file.exists()
 
@@ -224,15 +201,22 @@ def test_to_psy_serialization_simple(simple_test_system, tmp_path):
 
     simple_test_system._time_series_mgr.serialize = mock_serialize
 
+    output_file = tmp_path / "simple_system.json"
+
     config = SiennaConfig(
         model_year=2010,
         system_name="Simple Test System",
         scenario="test",
         system_base_power=100.0,
         skip_validation=False,
+        output_path=str(output_file),
     )
 
-    system_data = {
+    ctx = PluginContext(config=config, system=simple_test_system)
+    exporter = SiennaExporter.from_context(ctx)
+
+    # Set system_data for export
+    exporter.system_data = {
         "system_information": {
             "internal": {
                 "uuid": {"value": "test-uuid"},
@@ -243,19 +227,9 @@ def test_to_psy_serialization_simple(simple_test_system, tmp_path):
             "description": "Simple test system for PSY serialization",
         },
         "data_information": {"version": "1.0", "base_power": 100.0},
-        "component_fields": {},
     }
 
-    output_file = tmp_path / "simple_system.json"
-
-    exporter = SiennaExporter(
-        config,
-        simple_test_system,
-        system_data=system_data,
-        output_path=output_file,
-    )
-    result = exporter.export()
-    assert result.is_ok(), f"Export failed: {result.error if result.is_err() else ''}"
+    _ = exporter.run()
 
     assert output_file.exists()
 

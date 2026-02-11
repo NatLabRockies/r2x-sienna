@@ -3,8 +3,10 @@ from pint import Quantity
 
 
 class GeoLocation(InfraSysBaseModel):
-    Latitude: float
-    Longitude: float
+    """Geographic location supporting both Latitude/Longitude and GeoJSON formats."""
+
+    coordinates: list[float] | list[list[float]]
+    type: str
 
 
 class MinMax(InfraSysBaseModel):

@@ -63,6 +63,7 @@ class SiennaConfig(PluginConfig):
     ] = None
     system_name: Annotated[str | None, Field(default=None, description="Power system name")] = None
     json_path: Annotated[str | None, Field(default=None, description="Path to JSON data file")] = None
+    output_path: Annotated[str | None, Field(default=None, description="Path for output JSON file")] = None
     scenario: Annotated[str, Field(default="base", description="Scenario identifier")] = "base"
     system_base_power: Annotated[
         float, Field(default=100.0, description="System base power in MVA for per-unit calculations")
@@ -70,6 +71,10 @@ class SiennaConfig(PluginConfig):
     skip_validation: Annotated[
         bool, Field(default=False, description="Whether to skip validation during parsing")
     ] = False
+    models: Annotated[
+        tuple[str, ...],
+        Field(default=("r2x_sienna.models",), description="Module path(s) for Sienna component classes"),
+    ] = ("r2x_sienna.models",)
 
     @classmethod
     def load_defaults(cls, defaults_file: str | Path | None = None) -> dict[str, Any]:
@@ -102,3 +107,37 @@ class SiennaConfig(PluginConfig):
 
         with open(defaults_file) as f:
             return json.load(f)
+
+
+class SiennaExporterConfig(PluginConfig):
+    """Configuration for Sienna exporter.
+
+    This configuration class defines parameters needed to export a System
+    to Sienna PSY JSON format. Unlike SiennaConfig, output_path is required.
+
+    Parameters
+    ----------
+    output_path : str
+        Path for output JSON file (required)
+    system_base_power : float, optional
+        System base power in MVA for per-unit calculations
+    scenario : str, optional
+        Scenario identifier
+
+    Examples
+    --------
+    >>> config = SiennaExporterConfig(
+    ...     output_path="/tmp/output/system.json",
+    ...     system_base_power=100.0,
+    ... )
+    """
+
+    output_path: Annotated[str, Field(description="Path for output JSON file")]
+    system_base_power: Annotated[
+        float, Field(default=100.0, description="System base power in MVA for per-unit calculations")
+    ] = 100.0
+    scenario: Annotated[str, Field(default="base", description="Scenario identifier")] = "base"
+    models: Annotated[
+        tuple[str, ...],
+        Field(default=("r2x_sienna.models",), description="Module path(s) for Sienna component classes"),
+    ] = ("r2x_sienna.models",)

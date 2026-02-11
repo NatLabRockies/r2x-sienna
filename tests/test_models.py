@@ -5,7 +5,7 @@ from infrasys import System
 from infrasys.cost_curves import FuelCurve, UnitSystem
 from infrasys.value_curves import LinearCurve
 
-from r2x_sienna.config import SiennaConfig
+from r2x_sienna.plugin_config import SiennaConfig
 from r2x_sienna.exporter import to_psy
 from r2x_sienna.models import (
     ACBus,

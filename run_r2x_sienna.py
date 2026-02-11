@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from loguru import logger
 from r2x_core.store import DataStore
-from r2x_sienna.config import SiennaConfig
+from r2x_sienna.plugin_config import SiennaConfig
 from r2x_sienna.exporter import to_psy
 from r2x_sienna.parser import SiennaParser
 

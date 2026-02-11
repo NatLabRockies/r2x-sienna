@@ -6,6 +6,7 @@ from loguru import logger
 from r2x_core import UpgradeType
 
 from r2x_sienna.models import HydroReservoirCost, ReservoirDataType
+from r2x_sienna.models.enums import PrimeMoversType
 
 from .data_upgrader import SiennaUpgrader
 
@@ -80,6 +81,7 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
             "turbine_type": ext.get("turbine_type"),
             "conversion_factor": ext.get("conversion_factor", 1.0),
             "reservoirs": [{"value": comp["internal"]["uuid"]["value"]}],
+            "prime_mover_type": str(PrimeMoversType.OT),
             "services": ext.get("services", []),
             "dynamic_injector": ext.get("dynamic_injector"),
             "ext": ext,
@@ -208,7 +210,7 @@ def upgrade_ac_bus(system_data: dict[str, Any]) -> dict[str, Any]:
             new_components.append(comp)
             continue
 
-        if comp["angle"] > 1.571 or comp["angle"] < -1.571:
+        if comp["angle"] >= 1.571 or comp["angle"] <= -1.571:
             logger.warning(
                 f"Bus {comp['name']} has an angle of {comp['angle']}, which is outside the valid range [-1.571, 1.571]. Setting angle to 0.0.",
             )
@@ -235,36 +237,21 @@ def upgrade_3w_transformer(system_data: dict[str, Any]) -> dict[str, Any]:
             new_components.append(comp)
             continue
 
-        if comp["x_secondary"] > 4 or comp["x_secondary"] < -2:
-            logger.warning(
-                f"Transformer {comp['name']} has an x_secondary of {comp['x_secondary']}, which is outside the valid range [-2, 4]. Setting x_secondary to 0.0.",
-            )
-            comp["x_secondary"] = 0.0
-        if comp["x_tertiary"] > 4 or comp["x_tertiary"] < -2:
-            logger.warning(
-                f"Transformer {comp['name']} has an x_tertiary of {comp['x_tertiary']}, which is outside the valid range [-2, 4]. Setting x_tertiary to 0.0.",
-            )
-            comp["x_tertiary"] = 0.0
-        if comp["x_23"] > 4 or comp["x_23"] < -2:
-            logger.warning(
-                f"Transformer {comp['name']} has an x_23 of {comp['x_23']}, which is outside the valid range [-2, 4]. Setting x_23 to 0.0.",
-            )
-            comp["x_23"] = 0.0
-        if comp["x_13"] > 4 or comp["x_13"] < 0:
-            logger.warning(
-                f"Transformer {comp['name']} has an x_13 of {comp['x_13']}, which is outside the valid range [0, 4]. Setting x_13 to 0.0.",
-            )
-            comp["x_13"] = 0.0
-        if comp["r_23"] > 4 or comp["r_23"] < 0:
-            logger.warning(
-                f"Transformer {comp['name']} has an r_23 of {comp['r_23']}, which is outside the valid range [0, 4]. Setting r_23 to 0.0.",
-            )
-            comp["r_23"] = 0.0
-        if comp["r_13"] > 4 or comp["r_13"] < 0:
-            logger.warning(
-                f"Transformer {comp['name']} has an r_13 of {comp['r_13']}, which is outside the valid range [0, 4]. Setting r_13 to 0.0.",
-            )
-            comp["r_13"] = 0.0
+        field_ranges = {
+            "x_secondary": (-2, 4),
+            "x_tertiary": (-2, 4),
+            "x_23": (-2, 4),
+            "x_13": (0, 4),
+            "r_23": (0, 4),
+            "r_13": (0, 4),
+        }
+
+        for field, (min_val, max_val) in field_ranges.items():
+            value = comp.get(field)
+            if value is not None and (value < min_val or value > max_val):
+                logger.warning(
+                    f"Transformer {comp['name']} has a {field} of {value}, which is outside the valid range [{min_val}, {max_val}]."
+                )
 
         new_components.extend([comp])
 

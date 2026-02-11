@@ -6,9 +6,10 @@ from importlib.metadata import version
 
 from loguru import logger
 
-from .config import SiennaConfig
+from .plugin_config import SiennaConfig, SiennaExporterConfig
 from .exporter import SiennaExporter
 from .parser import SiennaParser
+from .upgrader.data_upgrader import SiennaUpgrader, SiennaVersionDetector
 
 __version__ = version("r2x_sienna")
 
@@ -20,7 +21,10 @@ logger.disable("r2x_sienna")
 
 __all__ = [
     "SiennaConfig",
+    "SiennaExporterConfig",
     "SiennaParser",
     "SiennaExporter",
+    "SiennaUpgrader",
+    "SiennaVersionDetector",
     "__version__",
 ]

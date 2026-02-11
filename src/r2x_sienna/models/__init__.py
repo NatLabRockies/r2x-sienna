@@ -14,8 +14,8 @@ from .branch import (
     TModelHVDCLine,
     Transformer2W,
     Transformer3W,
-    TwoTerminalHVDCLine,
     TwoTerminalGenericHVDCLine,
+    TwoTerminalHVDCLine,
     TwoTerminalLCCLine,
     TwoTerminalVSCLine,
     TwoWindingTransformer,
@@ -29,6 +29,7 @@ from .costs import (
     ThermalGenerationCost,
 )
 from .enums import (
+    ACBusTypes,
     DiscreteControlledBranchStatus,
     DiscreteControlledBranchType,
     FACTSOperationModes,
@@ -44,10 +45,10 @@ from .enums import (
     TransformerControlObjective,
     WindingCategory,
     WindingGroupNumber,
-    ACBusTypes,
 )
 from .generators import (
     EnergyReservoirStorage,
+    Generator,
     HybridSystem,
     HydroDispatch,
     HydroEnergyReservoir,
@@ -59,7 +60,9 @@ from .generators import (
     RenewableDispatch,
     RenewableGen,
     RenewableNonDispatch,
+    Storage,
     SynchronousCondenser,
+    ThermalGen,
     ThermalMultiStart,
     ThermalStandard,
 )
@@ -138,6 +141,8 @@ __all__ = [
     "StorageCost",
     "ThermalGenerationCost",
     # generators
+    "Generator",
+    "Storage",
     "SynchronousCondenser",
     "EnergyReservoirStorage",
     "HybridSystem",
@@ -150,6 +155,7 @@ __all__ = [
     "RenewableDispatch",
     "RenewableGen",
     "RenewableNonDispatch",
+    "ThermalGen",
     "ThermalMultiStart",
     "ThermalStandard",
     "HydroPumpTurbine",
