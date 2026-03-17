@@ -11,6 +11,168 @@ from r2x_sienna.models.enums import PrimeMoversType
 from .data_upgrader import SiennaUpgrader
 
 
+def _patch_ac_branch(comp: dict[str, Any]) -> None:
+    """Fill in missing rating_b and rating_c fields on an AC branch component in place."""
+    comp_name = comp.get("name", "<unknown>")
+    comp_type = comp.get("__metadata__", {}).get("type", "<unknown>")
+    rating = comp.get("rating") or 0.0
+    for field in ("rating_b", "rating_c"):
+        if comp.get(field) is None:
+            logger.warning(
+                "Component {} ({}) has no {} defined. Assuming {} = rating = {}.",
+                comp_name,
+                comp_type,
+                field,
+                field,
+                rating,
+            )
+            comp[field] = rating
+
+
+def _get_ref_uuid(ref: Any) -> str | None:
+    """Extract a UUID string from a component reference dict.
+
+    Handles both the ``{"value": "uuid"}`` format (PSY4/infrasys composed refs)
+    and the ``{"__metadata__": {"uuid": "..."}}`` format (PSY5 serialization).
+    """
+    if not isinstance(ref, dict):
+        return None
+    if "value" in ref:
+        return ref["value"]
+    return ref.get("__metadata__", {}).get("uuid")
+
+
+def _build_bus_voltage_map(components: list[dict[str, Any]]) -> dict[str, float]:
+    """Return {uuid: base_voltage} for every ACBus in *components*."""
+    return {
+        comp["internal"]["uuid"]["value"]: comp.get("base_voltage", 0.0)
+        for comp in components
+        if comp.get("__metadata__", {}).get("type") == "ACBus" and "internal" in comp
+    }
+
+
+def _build_arc_to_bus_map(
+    components: list[dict[str, Any]],
+) -> dict[str, tuple[str | None, str | None]]:
+    """Return {arc_uuid: (from_bus_uuid, to_bus_uuid)} for every Arc in *components*."""
+    arc_map: dict[str, tuple[str | None, str | None]] = {}
+    for comp in components:
+        if comp.get("__metadata__", {}).get("type") != "Arc":
+            continue
+        arc_uuid = _get_ref_uuid(comp.get("internal", {}).get("uuid", {}))
+        if arc_uuid:
+            arc_map[arc_uuid] = (
+                _get_ref_uuid(comp.get("from", {})),
+                _get_ref_uuid(comp.get("to", {})),
+            )
+    return arc_map
+
+
+def _patch_two_winding_transformer(
+    comp: dict[str, Any],
+    bus_voltage_map: dict[str, float],
+    arc_to_bus_map: dict[str, tuple[str | None, str | None]],
+    system_base_power: float,
+) -> None:
+    """Apply common two-winding transformer field fixes in place."""
+    comp_name = comp.get("name", "<unknown>")
+    comp_type = comp.get("__metadata__", {}).get("type", "<unknown>")
+
+    # primary_shunt: float to Complex dict upgrade
+    if isinstance(comp.get("primary_shunt"), float):
+        comp["primary_shunt"] = {"real": comp["primary_shunt"], "imag": 0.0}
+
+    # Resolve primary/secondary voltages from the connected buses via the Arc object
+    primary_voltage = 0.0
+    secondary_voltage = 0.0
+    arc_uuid = _get_ref_uuid(comp.get("arc", {}))
+    if arc_uuid:
+        from_uuid, to_uuid = arc_to_bus_map.get(arc_uuid, (None, None))
+        primary_voltage = bus_voltage_map.get(from_uuid or "", 0.0)
+        secondary_voltage = bus_voltage_map.get(to_uuid or "", 0.0)
+
+    # Set rating_b and rating_c to rating if they are missing
+    rating = comp.get("rating") or 0.0
+    defaults: dict[str, Any] = {
+        "rating_b": rating,
+        "rating_c": rating,
+        "base_power": system_base_power,
+        "base_voltage_primary": primary_voltage,
+        "base_voltage_secondary": secondary_voltage,
+    }
+    for field, default in defaults.items():
+        if not comp.get(field):
+            logger.warning(
+                "Component {} ({}) has no {} defined. Assuming {} = {}.",
+                comp_name,
+                comp_type,
+                field,
+                field,
+                default,
+            )
+            comp[field] = default
+
+
+def _patch_three_winding_transformer(
+    comp: dict[str, Any],
+    bus_voltage_map: dict[str, float],
+    arc_to_bus_map: dict[str, tuple[str | None, str | None]],
+    system_base_power: float,
+) -> None:
+    """Apply common three-winding transformer field fixes in place."""
+    comp_name = comp.get("name", "<unknown>")
+    comp_type = comp.get("__metadata__", {}).get("type", "<unknown>")
+
+    # Validate known field ranges and warn if out of bounds
+    field_ranges: dict[str, tuple[float, float]] = {
+        "x_secondary": (-2, 4),
+        "x_tertiary": (-2, 4),
+        "x_23": (-2, 4),
+        "x_13": (0, 4),
+        "r_23": (0, 4),
+        "r_13": (0, 4),
+    }
+    for field, (min_val, max_val) in field_ranges.items():
+        value = comp.get(field)
+        if value is not None and (value < min_val or value > max_val):
+            logger.warning(
+                "Component {} ({}) has a {} of {}, which is outside the valid range [{}, {}].",
+                comp_name,
+                comp_type,
+                field,
+                value,
+                min_val,
+                max_val,
+            )
+
+    def _voltage_from_arc(arc_key: str) -> float:
+        arc_uuid = _get_ref_uuid(comp.get(arc_key, {}))
+        if arc_uuid:
+            from_uuid, _ = arc_to_bus_map.get(arc_uuid, (None, None))
+            return bus_voltage_map.get(from_uuid or "", 0.0)
+        return 0.0
+
+    defaults: dict[str, Any] = {
+        "base_power_12": system_base_power,
+        "base_power_23": system_base_power,
+        "base_power_13": system_base_power,
+        "base_voltage_primary": _voltage_from_arc("primary_star_arc"),
+        "base_voltage_secondary": _voltage_from_arc("secondary_star_arc"),
+        "base_voltage_tertiary": _voltage_from_arc("tertiary_star_arc"),
+    }
+    for field, default in defaults.items():
+        if comp.get(field) is None:
+            logger.warning(
+                "Component {} ({}) has no {} defined. Assuming {} = {}.",
+                comp_name,
+                comp_type,
+                field,
+                field,
+                default,
+            )
+            comp[field] = default
+
+
 def system_data_has_right_keys(system_data: dict[str, Any]) -> bool:
     return bool(system_data.get("data", {}).get("components"))
 
@@ -93,6 +255,40 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
 
     system_data["data"]["components"] = new_components
     logger.debug("Completed HydroEnergyReservoir upgrade step.")
+    return system_data
+
+
+@SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=99)
+def upgrade_hydro_turbine_prime_mover_type(system_data: dict[str, Any]) -> dict[str, Any]:
+    """Fill in missing prime_mover_type on HydroTurbine / HydroPumpTurbine components.
+
+    PSY5-format JSONs do not include prime_mover_type on these types, but the r2x_sienna
+    models require it.
+    """
+    if not system_data_has_right_keys(system_data):
+        logger.debug("No data found. Skipping step")
+        return system_data
+
+    default_prime_mover = {
+        "HydroTurbine": PrimeMoversType.HY,
+        "HydroPumpTurbine": PrimeMoversType.PS,
+    }
+    for comp in system_data["data"]["components"]:
+        comp_type = comp.get("__metadata__", {}).get("type")
+        if comp_type not in default_prime_mover:
+            continue
+
+        if comp.get("prime_mover_type") is None:
+            default = default_prime_mover[comp_type]
+            logger.warning(
+                "Component {} ({}) has no prime_mover_type defined. Assuming prime_mover_type = {}.",
+                comp.get("name", "<unknown>"),
+                comp_type,
+                default,
+            )
+            comp["prime_mover_type"] = str(default)
+
+    logger.debug("Completed hydro turbine prime_mover_type upgrade step.")
     return system_data
 
 
@@ -225,38 +421,122 @@ def upgrade_ac_bus(system_data: dict[str, Any]) -> dict[str, Any]:
 
 @SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
 def upgrade_3w_transformer(system_data: dict[str, Any]) -> dict[str, Any]:
-    """Upgrade 3W Transformer components."""
+    """Upgrade Transformer3W components: validate field ranges and fill in missing base fields."""
     if not system_data_has_right_keys(system_data):
         logger.debug("No data found. Skipping step")
         return system_data
 
-    new_components: list[dict[str, Any]] = []
+    bus_voltage_map, arc_to_bus_map, system_base_power = _prepare_transformer_context(system_data)
+    for comp in system_data["data"]["components"]:
+        if comp.get("__metadata__", {}).get("type") == "Transformer3W":
+            _patch_three_winding_transformer(comp, bus_voltage_map, arc_to_bus_map, system_base_power)
+
+    logger.debug("Completed Transformer3W upgrade step.")
+    return system_data
+
+
+@SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
+def upgrade_phase_shifting_3w_transformer(system_data: dict[str, Any]) -> dict[str, Any]:
+    """Upgrade PhaseShiftingTransformer3W components: validate field ranges and fill in missing base fields."""
+    if not system_data_has_right_keys(system_data):
+        logger.debug("No data found. Skipping step")
+        return system_data
+
+    bus_voltage_map, arc_to_bus_map, system_base_power = _prepare_transformer_context(system_data)
+    for comp in system_data["data"]["components"]:
+        if comp.get("__metadata__", {}).get("type") == "PhaseShiftingTransformer3W":
+            _patch_three_winding_transformer(comp, bus_voltage_map, arc_to_bus_map, system_base_power)
+
+    logger.debug("Completed PhaseShiftingTransformer3W upgrade step.")
+    return system_data
+
+
+@SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
+def upgrade_line(system_data: dict[str, Any]) -> dict[str, Any]:
+    """Fill in missing rating_b and rating_c fields for Line components."""
+    if not system_data_has_right_keys(system_data):
+        logger.debug("No data found. Skipping step")
+        return system_data
 
     for comp in system_data["data"]["components"]:
-        if comp["__metadata__"]["type"] != "Transformer3W":
-            new_components.append(comp)
-            continue
+        if comp.get("__metadata__", {}).get("type") == "Line":
+            _patch_ac_branch(comp)
 
-        field_ranges = {
-            "x_secondary": (-2, 4),
-            "x_tertiary": (-2, 4),
-            "x_23": (-2, 4),
-            "x_13": (0, 4),
-            "r_23": (0, 4),
-            "r_13": (0, 4),
-        }
+    logger.debug("Completed Line upgrade step.")
+    return system_data
 
-        for field, (min_val, max_val) in field_ranges.items():
-            value = comp.get(field)
-            if value is not None and (value < min_val or value > max_val):
-                logger.warning(
-                    f"Transformer {comp['name']} has a {field} of {value}, which is outside the valid range [{min_val}, {max_val}]."
-                )
 
-        new_components.extend([comp])
+@SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
+def upgrade_monitored_line(system_data: dict[str, Any]) -> dict[str, Any]:
+    """Fill in missing rating_b and rating_c fields for MonitoredLine components."""
+    if not system_data_has_right_keys(system_data):
+        logger.debug("No data found. Skipping step")
+        return system_data
 
-    system_data["data"]["components"] = new_components
-    logger.debug("Completed Transformer3W upgrade step.")
+    for comp in system_data["data"]["components"]:
+        if comp.get("__metadata__", {}).get("type") == "MonitoredLine":
+            _patch_ac_branch(comp)
+
+    logger.debug("Completed MonitoredLine upgrade step.")
+    return system_data
+
+
+def _prepare_transformer_context(
+    system_data: dict[str, Any],
+) -> tuple[dict[str, float], dict[str, tuple[str | None, str | None]], float]:
+    """Build shared lookup maps and system base power for transformer upgrade steps."""
+    components = system_data["data"]["components"]
+    bus_voltage_map = _build_bus_voltage_map(components)
+    arc_to_bus_map = _build_arc_to_bus_map(components)
+    system_base_power = system_data.get("units_settings", {}).get("base_value", 100.0)
+    return bus_voltage_map, arc_to_bus_map, system_base_power
+
+
+@SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
+def upgrade_2w_transformer(system_data: dict[str, Any]) -> dict[str, Any]:
+    """Upgrade Transformer2W components: fix primary_shunt and fill in missing rated/voltage fields."""
+    if not system_data_has_right_keys(system_data):
+        logger.debug("No data found. Skipping step")
+        return system_data
+
+    bus_voltage_map, arc_to_bus_map, system_base_power = _prepare_transformer_context(system_data)
+    for comp in system_data["data"]["components"]:
+        if comp.get("__metadata__", {}).get("type") == "Transformer2W":
+            _patch_two_winding_transformer(comp, bus_voltage_map, arc_to_bus_map, system_base_power)
+
+    logger.debug("Completed Transformer2W upgrade step.")
+    return system_data
+
+
+@SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
+def upgrade_tap_transformer(system_data: dict[str, Any]) -> dict[str, Any]:
+    """Upgrade TapTransformer components: fix primary_shunt and fill in missing rated/voltage fields."""
+    if not system_data_has_right_keys(system_data):
+        logger.debug("No data found. Skipping step")
+        return system_data
+
+    bus_voltage_map, arc_to_bus_map, system_base_power = _prepare_transformer_context(system_data)
+    for comp in system_data["data"]["components"]:
+        if comp.get("__metadata__", {}).get("type") == "TapTransformer":
+            _patch_two_winding_transformer(comp, bus_voltage_map, arc_to_bus_map, system_base_power)
+
+    logger.debug("Completed TapTransformer upgrade step.")
+    return system_data
+
+
+@SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
+def upgrade_phase_shifting_transformer(system_data: dict[str, Any]) -> dict[str, Any]:
+    """Upgrade PhaseShiftingTransformer components: fix primary_shunt and fill in missing rated/voltage fields."""
+    if not system_data_has_right_keys(system_data):
+        logger.debug("No data found. Skipping step")
+        return system_data
+
+    bus_voltage_map, arc_to_bus_map, system_base_power = _prepare_transformer_context(system_data)
+    for comp in system_data["data"]["components"]:
+        if comp.get("__metadata__", {}).get("type") == "PhaseShiftingTransformer":
+            _patch_two_winding_transformer(comp, bus_voltage_map, arc_to_bus_map, system_base_power)
+
+    logger.debug("Completed PhaseShiftingTransformer upgrade step.")
     return system_data
 
 
@@ -278,25 +558,6 @@ def upgrade_two_terminal_hvdc_line(system_data: dict[str, Any]) -> dict[str, Any
 
 
 @SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
-def upgrade_2w_transformer(system_data: dict[str, Any]) -> dict[str, Any]:
-    """Upgrade Transformer2W components: convert primary_shunt from float to Complex dict if needed."""
-    if not system_data_has_right_keys(system_data):
-        logger.debug("No data found. Skipping step")
-        return system_data
-
-    for comp in system_data["data"]["components"]:
-        if (
-            comp.get("type") in ("Transformer2W", "PhaseShiftingTransformer", "TapTransformer")
-            or comp.get("__metadata__", {}).get("type")
-            in ("Transformer2W", "PhaseShiftingTransformer", "TapTransformer")
-        ) and isinstance(comp.get("primary_shunt"), float):
-            comp["primary_shunt"] = {"real": comp["primary_shunt"], "imag": 0.0}
-
-    logger.debug("Completed Transformer2W primary_shunt upgrade step.")
-    return system_data
-
-
-@SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
 def remove_time_series_container(system_data: dict[str, Any]) -> dict[str, Any]:
     if not system_data_has_right_keys(system_data):
         logger.debug("No data found. Skipping step")
@@ -307,4 +568,57 @@ def remove_time_series_container(system_data: dict[str, Any]) -> dict[str, Any]:
             comp.pop("time_series_container")
 
     logger.debug("Completed removal of time_series_container from components.")
+    return system_data
+
+
+@SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
+def upgrade_geographic_info(system_data: dict[str, Any]) -> dict[str, Any]:
+    if not system_data_has_right_keys(system_data):
+        logger.debug("No data found. Skipping step")
+        return system_data
+
+    attr_mgr = system_data["data"].get("supplemental_attribute_manager")
+    if not attr_mgr or not attr_mgr.get("attributes"):
+        logger.debug("No supplemental_attribute_manager or attributes found. Skipping step")
+        return system_data
+
+    for comp in attr_mgr["attributes"]:
+        comp_type = comp.get("__metadata__", {}).get("type", "")
+        if comp_type != "GeographicInfo":
+            continue
+
+        geo_json = comp.get("geo_json")
+        if geo_json is None:
+            logger.warning(
+                "GeographicInfo component '{}' has no geo_json field. Skipping.",
+                comp.get("name", "<unknown>"),
+            )
+            continue
+
+        # Already in the new GeoJSON format (coordinates + type)
+        if "coordinates" in geo_json and "type" in geo_json:
+            logger.debug(
+                "GeographicInfo component '{}' geo_json already upgraded. Skipping.",
+                comp.get("name", "<unknown>"),
+            )
+            continue
+
+        longitude = geo_json.get("Longitude")
+        latitude = geo_json.get("Latitude")
+
+        if longitude is None or latitude is None:
+            missing = [k for k, v in (("Longitude", longitude), ("Latitude", latitude)) if v is None]
+            logger.warning(
+                "GeographicInfo component '{}' geo_json is missing required key(s): {}. Skipping.",
+                comp.get("name", "<unknown>"),
+                missing,
+            )
+            continue
+
+        comp["geo_json"] = {
+            "coordinates": [longitude, latitude],
+            "type": "Point",
+        }
+
+    logger.debug("Successfully completed upgrading GeographicInfo in upgrade_geographic_info.")
     return system_data

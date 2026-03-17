@@ -94,19 +94,13 @@ def test_get_component_output_fields():
 
 def test_to_psy_serialization(sienna_config, infrasys_test_system, tmp_path):
     """Test full PSY serialization."""
-
-    def mock_serialize(*args, **kwargs):
-        pass
-
-    infrasys_test_system._time_series_mgr.serialize = mock_serialize
+    output_file = tmp_path / "test_system.json"
 
     system_data = {
         "system_information": {"name": "Test System", "description": "Test system for PSY serialization"},
         "data_information": {"version": "1.0", "base_power": 100.0},
         "component_fields": {},
     }
-
-    output_file = tmp_path / "test_system.json"
 
     to_psy(sienna_config, infrasys_test_system, system_data, output_file, write_year=2010)
 

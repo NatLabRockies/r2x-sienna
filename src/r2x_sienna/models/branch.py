@@ -130,8 +130,6 @@ class DiscreteControlledACBranch(ACBranch):
         DiscreteControlledBranchStatus,
         Field(default=DiscreteControlledBranchStatus.CLOSED, description="Open or Close status"),
     ] = DiscreteControlledBranchStatus.CLOSED
-    rating_b: Annotated[float, Field(description="Second thermal rating of the line.")] | None = None
-    rating_c: Annotated[float, Field(description="Third thermal rating of the line.")] | None = None
 
     @classmethod
     def example(cls) -> "DiscreteControlledACBranch":
@@ -150,8 +148,6 @@ class DiscreteControlledACBranch(ACBranch):
             r=0.01,
             x=0.05,
             rating=100,
-            rating_b=120,
-            rating_c=150,
             discrete_branch_type=DiscreteControlledBranchType.BREAKER,
             branch_status=DiscreteControlledBranchStatus.CLOSED,
         )

@@ -1495,6 +1495,9 @@ class HydroPumpTurbine(HydroGen):
         bool,
         Field(description="Whether the unit must run (i.e., cannot be curtailed)."),
     ] = False
+    prime_mover_type: Annotated[
+        PrimeMoversType, Field(description="Prime mover technology according to EIA 923.")
+    ]
 
     @classmethod
     def example(cls) -> "HydroPumpTurbine":
@@ -1553,6 +1556,7 @@ class HydroPumpTurbine(HydroGen):
             time_at_status=0.0,
             operation_cost=HydroGenerationCost.example(),
             active_power_pump=0.0,
+            prime_mover_type=PrimeMoversType.PS,
             efficiency=TurbinePump(turbine=0.90, pump=0.85),
             transition_time=TurbinePump(turbine=0.25, pump=0.25),
             minimum_time=TurbinePump(turbine=1.0, pump=1.0),

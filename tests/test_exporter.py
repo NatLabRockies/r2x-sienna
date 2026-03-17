@@ -15,6 +15,7 @@ from r2x_sienna.models import (
     ThermalFuels,
     ThermalGenerationCost,
     ThermalStandard,
+    Transformer2W,
 )
 from r2x_sienna.serialization import serialize_component_to_psy, serialize_value
 
@@ -108,6 +109,191 @@ def simple_test_system():
     return system
 
 
+@pytest.fixture
+def single_bus_system_with_geoinfo():
+    """Create a minimal system with one bus (GeographicInfo SA), one generator (GeometricDistributionForcedOutage SA),
+    and one transformer (ImpedanceCorrectionData SA)."""
+    from infrasys import System
+    from r2x_sienna.models import (
+        ACBus,
+        Arc,
+        Area,
+        LoadZone,
+        GeographicInfo,
+        GeometricDistributionForcedOutage,
+        ImpedanceCorrectionData,
+        Transformer2W,
+    )
+    from r2x_sienna.models.named_tuples import Complex, MinMax
+    from r2x_sienna.models.enums import ACBusTypes
+    from infrasys.base_quantity import ureg
+
+    system = System()
+    system.name = "single_bus_geo_system"
+    area = Area(name="TestArea")
+    load_zone = LoadZone(name="TestLoadZone")
+    system.add_component(area)
+    system.add_component(load_zone)
+
+    bus = ACBus(
+        name="Bus1",
+        number=1,
+        bustype=ACBusTypes.PQ,
+        base_voltage=138 * ureg.kV,
+        area=area,
+        load_zone=load_zone,
+        magnitude=1.0,
+        angle=0.0,
+        voltage_limits=MinMax(min=0.95, max=1.05),
+    )
+    system.add_component(bus)
+
+    bus2 = ACBus(
+        name="Bus2",
+        number=2,
+        bustype=ACBusTypes.PQ,
+        base_voltage=138 * ureg.kV,
+        area=area,
+        load_zone=load_zone,
+        magnitude=1.0,
+        angle=0.0,
+        voltage_limits=MinMax(min=0.95, max=1.05),
+    )
+    system.add_component(bus2)
+
+    geo = GeographicInfo.example()
+    geo.geo_json.coordinates = [1.0, 2.0]
+    system.add_supplemental_attribute(bus, geo)
+
+    gen = ThermalStandard(
+        name="TestGen",
+        must_run=False,
+        bus=bus,
+        status=False,
+        base_power=100.0,
+        rating=200.0,
+        active_power=0.0,
+        reactive_power=0.0,
+        active_power_limits=MinMax(min=0, max=1),
+        prime_mover_type=PrimeMoversType.CC,
+        fuel=ThermalFuels.NATURAL_GAS,
+        operation_cost=ThermalGenerationCost.example(),
+        time_at_status=1_000,
+    )
+    system.add_component(gen)
+
+    outage = GeometricDistributionForcedOutage.example()
+    system.add_supplemental_attribute(gen, outage)
+
+    arc1 = Arc(from_to=bus, to_from=bus2)
+    system.add_component(arc1)
+    transformer = Transformer2W(
+        name="tr2w-bus1-bus2",
+        rating=100,
+        arc=arc1,
+        active_power_flow=100,
+        reactive_power_flow=100,
+        primary_shunt=Complex(real=0.0, imag=0.0),
+    )
+    system.add_component(transformer)
+
+    impedance = ImpedanceCorrectionData.example()
+    system.add_supplemental_attribute(transformer, impedance)
+
+    return system, bus.name, [1.0, 2.0], gen.name, outage, transformer.name, impedance
+
+
+def test_supplemental_attributes_roundtrip(single_bus_system_with_geoinfo, tmp_path):
+    """Ensure GeographicInfo, GeometricDistributionForcedOutage, and ImpedanceCorrectionData
+    supplemental attributes are preserved after export + parse."""
+    from r2x_sienna.models import GeographicInfo, GeometricDistributionForcedOutage, ImpedanceCorrectionData
+
+    system, bus_name, expected_coords, gen_name, expected_outage, transformer_name, expected_impedance = (
+        single_bus_system_with_geoinfo
+    )
+
+    output_file = tmp_path / "single_bus_geo.json"
+
+    export_cfg = SiennaConfig(
+        model_year=2010,
+        system_name="single_bus_geo_system",
+        scenario="test",
+        system_base_power=100.0,
+        skip_validation=False,
+        output_path=str(output_file),
+    )
+    export_ctx = PluginContext(config=export_cfg, system=system, store=DataStore(path=tmp_path))
+    exporter = SiennaExporter.from_context(export_ctx)
+    exporter.should_export_time_series = False
+    _ = exporter.run()
+
+    assert output_file.exists()
+    assert output_file.stat().st_size > 0
+
+    parse_cfg = SiennaConfig(
+        model_year=2010,
+        system_name="single_bus_geo_system",
+        scenario="test",
+        system_base_power=100.0,
+        skip_validation=False,
+        json_path=str(output_file),
+    )
+    parse_ctx = PluginContext(config=parse_cfg, store=DataStore(path=tmp_path), skip_validation=False)
+    parser = SiennaParser.from_context(parse_ctx)
+    parsed_system = parser.run().system
+
+    # Verify Bus GeographicInfo attribute
+    parsed_bus = next(
+        c
+        for c in parsed_system._component_mgr.iter_all()
+        if isinstance(c, ACBus) and getattr(c, "name", None) == bus_name
+    )
+    assert parsed_system.has_supplemental_attribute(parsed_bus)
+    assert parsed_system.has_supplemental_attribute(parsed_bus, supplemental_attribute_type=GeographicInfo)
+    bus_attrs = parsed_system.get_supplemental_attributes_with_component(parsed_bus)
+    assert len(bus_attrs) >= 1
+    assert any(a.geo_json.coordinates == expected_coords for a in bus_attrs)
+
+    # Verify Generator GeometricDistributionForcedOutage attribute
+    parsed_gen = next(
+        c
+        for c in parsed_system._component_mgr.iter_all()
+        if isinstance(c, ThermalStandard) and getattr(c, "name", None) == gen_name
+    )
+    assert parsed_system.has_supplemental_attribute(parsed_gen)
+    assert parsed_system.has_supplemental_attribute(
+        parsed_gen, supplemental_attribute_type=GeometricDistributionForcedOutage
+    )
+    gen_attrs = parsed_system.get_supplemental_attributes_with_component(parsed_gen)
+    outage_attrs = [a for a in gen_attrs if isinstance(a, GeometricDistributionForcedOutage)]
+    assert len(outage_attrs) >= 1
+    parsed_outage = outage_attrs[0]
+    assert parsed_outage.mean_time_to_recovery == expected_outage.mean_time_to_recovery
+    assert parsed_outage.outage_transition_probability == expected_outage.outage_transition_probability
+
+    # Verify Transformer ImpedanceCorrectionData attribute
+    parsed_transformer = next(
+        c
+        for c in parsed_system._component_mgr.iter_all()
+        if isinstance(c, Transformer2W) and getattr(c, "name", None) == transformer_name
+    )
+    assert parsed_system.has_supplemental_attribute(parsed_transformer)
+    assert parsed_system.has_supplemental_attribute(
+        parsed_transformer, supplemental_attribute_type=ImpedanceCorrectionData
+    )
+    transformer_attrs = parsed_system.get_supplemental_attributes_with_component(parsed_transformer)
+    impedance_attrs = [a for a in transformer_attrs if isinstance(a, ImpedanceCorrectionData)]
+    assert len(impedance_attrs) >= 1
+    parsed_impedance = impedance_attrs[0]
+    assert parsed_impedance.table_number == expected_impedance.table_number
+    assert parsed_impedance.transformer_winding == expected_impedance.transformer_winding
+    assert parsed_impedance.transformer_control_mode == expected_impedance.transformer_control_mode
+    assert (
+        parsed_impedance.impedance_correction_curve.points
+        == expected_impedance.impedance_correction_curve.points
+    )
+
+
 def test_serialize_component_to_psy_rts(rts_system):
     """Test that RTS components can be serialized to PSY format."""
     components = list(rts_system._component_mgr.iter_all())
@@ -196,11 +382,6 @@ def test_to_psy_serialization_pjm(sienna_config_pjm, pjm_system, tmp_path):
 def test_to_psy_serialization_simple(simple_test_system, tmp_path):
     """Test PSY serialization with simple mock system to avoid time series issues."""
 
-    def mock_serialize(*args, **kwargs):
-        pass
-
-    simple_test_system._time_series_mgr.serialize = mock_serialize
-
     output_file = tmp_path / "simple_system.json"
 
     config = SiennaConfig(
@@ -214,6 +395,7 @@ def test_to_psy_serialization_simple(simple_test_system, tmp_path):
 
     ctx = PluginContext(config=config, system=simple_test_system)
     exporter = SiennaExporter.from_context(ctx)
+    exporter.should_export_time_series = False
 
     # Set system_data for export
     exporter.system_data = {

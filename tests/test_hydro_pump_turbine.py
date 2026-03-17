@@ -3,6 +3,7 @@ from r2x_core.system import System
 
 from r2x_sienna.models import ACBus
 from r2x_sienna.models.costs import HydroGenerationCost, HydroReservoirCost
+from r2x_sienna.models.enums import PrimeMoversType
 from r2x_sienna.models.generators import HydroPumpTurbine, HydroReservoir
 from r2x_sienna.models.named_tuples import MinMax, TurbinePump
 
@@ -68,6 +69,7 @@ def hydro_pump_turbine(bus, head_reservoir, tail_reservoir):
         conversion_factor=1.0,
         time_limits=None,
         must_run=False,
+        prime_mover_type=PrimeMoversType.PS,
         transition_time=TurbinePump(turbine=0.25, pump=0.25),
         operation_cost=HydroGenerationCost.example(),
         minimum_time=TurbinePump(turbine=1.0, pump=1.0),
@@ -127,6 +129,7 @@ def test_multiple_pump_turbines_single_reservoir(bus, head_reservoir, tail_reser
             head_reservoir=head_reservoir,
             tail_reservoir=tail_reservoir,
             powerhouse_elevation=100.0,
+            prime_mover_type=PrimeMoversType.PS,
             operation_cost=HydroGenerationCost.example(),
             transition_time={"turbine": 1, "pump": 1},
             minimum_time={"turbine": 1, "pump": 1},
