@@ -229,9 +229,7 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
             "active_power": comp.get("active_power", 0.0),
             "reactive_power": comp.get("reactive_power", 0.0),
             "rating": comp.get("rating", 0.0),
-            "active_power_limits": comp.get(
-                "active_power_limits", {"min": 0.0, "max": ext.get("rating", 0.0)}
-            ),
+            "active_power_limits": comp.get("active_power_limits"),
             "reactive_power_limits": comp.get("reactive_power_limits"),
             "outflow_limits": None,
             "powerhouse_elevation": ext.get("powerhouse_elevation", 0.0),
@@ -243,7 +241,7 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
             "turbine_type": ext.get("turbine_type"),
             "conversion_factor": ext.get("conversion_factor", 1.0),
             "reservoirs": [{"value": comp["internal"]["uuid"]["value"]}],
-            "prime_mover_type": str(PrimeMoversType.OT),
+            "prime_mover_type": str(PrimeMoversType.HY),
             "services": ext.get("services", []),
             "dynamic_injector": ext.get("dynamic_injector"),
             "ext": ext,
@@ -278,15 +276,14 @@ def upgrade_hydro_turbine_prime_mover_type(system_data: dict[str, Any]) -> dict[
         if comp_type not in default_prime_mover:
             continue
 
-        if comp.get("prime_mover_type") is None:
-            default = default_prime_mover[comp_type]
-            logger.warning(
-                "Component {} ({}) has no prime_mover_type defined. Assuming prime_mover_type = {}.",
-                comp.get("name", "<unknown>"),
-                comp_type,
-                default,
-            )
-            comp["prime_mover_type"] = str(default)
+        default = default_prime_mover[comp_type]
+        logger.warning(
+            "Component {} ({}) has no prime_mover_type defined. Assuming prime_mover_type = {}.",
+            comp.get("name", "<unknown>"),
+            comp_type,
+            default,
+        )
+        comp["prime_mover_type"] = str(default)
 
     logger.debug("Completed hydro turbine prime_mover_type upgrade step.")
     return system_data
