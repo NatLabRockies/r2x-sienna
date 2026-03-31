@@ -1,5 +1,7 @@
+import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
+from uuid import uuid4
 
 from loguru import logger
 from r2x_core import (
@@ -293,6 +295,189 @@ class SiennaUpgrader:
         return Ok(self.path)
 
 
+def _iso_8601_duration_from_milliseconds(value: Any) -> str | None:
+    """Convert milliseconds to the ISO-8601 duration string used by infrasys metadata."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        # Already an ISO-8601 duration
+        if stripped.startswith("P"):
+            return stripped
+        try:
+            value = float(stripped)
+        except ValueError:
+            return stripped
+
+    if isinstance(value, (int, float)):
+        seconds = float(value) / 1000.0
+        return f"P0DT{seconds:.3f}S"
+    return None
+
+
+def migrate_metadata(conn: "sqlite3.Connection") -> bool:
+    """Migrate legacy time series metadata table layouts to the infrasys schema.
+
+    Returns
+    -------
+    bool
+        True if migration updated the schema/data, False when no migration was needed.
+    """
+    from infrasys.time_series_metadata_store import create_associations_table
+    from infrasys.utils.sqlite import execute
+
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(time_series_associations)")
+    current_columns = [desc[1] for desc in cursor.fetchall()]
+    if not current_columns:
+        return False
+
+    # Current infrasys schema already has `resolution` and `metadata_uuid`.
+    # Legacy PSY4 variants can contain `resolution_ms` and/or miss `metadata_uuid`.
+    if "resolution" in current_columns and "metadata_uuid" in current_columns:
+        return False
+
+    logger.debug("Migrating legacy time_series_associations metadata table")
+    execute(cursor, "ALTER TABLE time_series_associations RENAME TO infrasys_metadata")
+    create_associations_table(connection=conn)
+
+    cursor.execute("SELECT * FROM infrasys_metadata")
+    columns = [desc[0] for desc in cursor.description]
+    rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    sql_data_to_insert: list[dict[str, Any]] = []
+    for row in rows:
+        initial_timestamp = row.get("initial_timestamp")
+        if isinstance(initial_timestamp, str) and "T" not in initial_timestamp:
+            initial_timestamp = initial_timestamp.replace(" ", "T")
+
+        resolution = row.get("resolution")
+        if resolution is None:
+            resolution = _iso_8601_duration_from_milliseconds(row.get("resolution_ms"))
+
+        horizon = row.get("horizon")
+        if horizon is None:
+            horizon = _iso_8601_duration_from_milliseconds(row.get("horizon_ms"))
+
+        interval = row.get("interval")
+        if interval is None:
+            interval = _iso_8601_duration_from_milliseconds(row.get("interval_ms"))
+
+        sql_data_to_insert.append(
+            {
+                "time_series_uuid": row.get("time_series_uuid"),
+                "time_series_type": row.get("time_series_type"),
+                "initial_timestamp": initial_timestamp,
+                "resolution": resolution,
+                "horizon": horizon,
+                "interval": interval,
+                "window_count": row.get("window_count"),
+                "length": row.get("length"),
+                "name": row.get("name"),
+                "owner_uuid": row.get("owner_uuid"),
+                "owner_type": row.get("owner_type"),
+                "owner_category": row.get("owner_category") or row.get("time_series_category") or "Component",
+                "features": row.get("features") or "[]",
+                "scaling_factor_multiplier": row.get("scaling_factor_multiplier"),
+                "metadata_uuid": row.get("metadata_uuid") or str(uuid4()),
+                "units": row.get("units"),
+            }
+        )
+
+    cursor.executemany(
+        """
+        INSERT INTO time_series_associations (
+            time_series_uuid, time_series_type, initial_timestamp,
+            resolution, horizon, interval, window_count, length, name,
+            owner_uuid, owner_type, owner_category, features,
+            scaling_factor_multiplier, metadata_uuid, units
+        ) VALUES (
+            :time_series_uuid, :time_series_type, :initial_timestamp,
+            :resolution, :horizon, :interval, :window_count, :length, :name,
+            :owner_uuid, :owner_type, :owner_category, :features,
+            :scaling_factor_multiplier, :metadata_uuid, :units
+        )
+        """,
+        sql_data_to_insert,
+    )
+    conn.commit()
+    logger.debug("Migrated {} legacy time series metadata rows", len(sql_data_to_insert))
+    return True
+
+
+def _upgrade_h5_time_series_metadata(h5_path: Path) -> Result[bool, str]:
+    """Upgrade embedded SQLite metadata in a Sienna HDF5 time series file."""
+    import sqlite3
+    import tempfile
+
+    import h5py
+    import numpy as np
+
+    H5_METADATA_KEY = "time_series_metadata"
+
+    with h5py.File(h5_path, "r") as h5f:
+        if H5_METADATA_KEY not in h5f:
+            return Ok(False)
+        ts_meta_bytes = bytes(h5f[H5_METADATA_KEY][:])
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+        tmp.write(ts_meta_bytes)
+
+    try:
+        conn = sqlite3.connect(tmp_path)
+        try:
+            changed = migrate_metadata(conn)
+        finally:
+            conn.close()
+
+        if not changed:
+            return Ok(False)
+
+        with h5py.File(h5_path, "a") as h5f:
+            del h5f[H5_METADATA_KEY]
+            h5f.create_dataset(H5_METADATA_KEY, data=np.frombuffer(tmp_path.read_bytes(), dtype=np.uint8))
+        logger.info("Upgraded legacy time series metadata schema in {}", h5_path)
+        return Ok(True)
+    except Exception as e:
+        return Err(f"Failed to upgrade time series metadata in {h5_path}: {e}")
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def _resolve_json_path(path: Path) -> Path | None:
+    if path.is_file():
+        return path
+    p1 = path / "system.json"
+    if p1.exists():
+        return p1
+    candidates = list(path.glob("*.json"))
+    candidates = [c for c in candidates if "_metadata" not in c.name]
+    return candidates[0] if candidates else None
+
+
+def _resolve_time_series_h5_path(json_path: Path) -> Path | None:
+    import json
+
+    with open(json_path) as f:
+        system_data = json.load(f)
+
+    data_section = system_data.get("data", {})
+    filename = data_section.get("time_series_storage_file")
+    if not filename:
+        return None
+
+    h5_dir = json_path.parent
+    time_series_path = Path(filename)
+    if time_series_path.is_absolute():
+        return time_series_path
+    if len(time_series_path.parts) > 1:
+        return h5_dir / time_series_path.name
+    return h5_dir / filename
+
+
 def run_sienna_upgrades(
     *,
     json_path: Path | str | None = None,
@@ -356,6 +541,18 @@ def run_sienna_upgrades(
     )
     if result.is_err():
         return Err(str(result.err()))
+
+    json_path_resolved = _resolve_json_path(upgrade_path)
+    if json_path_resolved is not None:
+        try:
+            h5_path = _resolve_time_series_h5_path(json_path_resolved)
+        except Exception as e:
+            return Err(f"Failed to inspect JSON for time series metadata upgrade: {e}")
+        if h5_path and h5_path.exists():
+            h5_upgrade = _upgrade_h5_time_series_metadata(h5_path)
+            if h5_upgrade.is_err():
+                return Err(str(h5_upgrade.err()))
+
     return Ok(None)
 
 

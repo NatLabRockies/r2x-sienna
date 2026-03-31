@@ -64,6 +64,10 @@ def serialize_single_supplemental_attribute(attr: Any) -> dict[str, Any] | None:
         "module": "InfrastructureSystems",
         "type": type(attr).__name__,
     }
+    psy_metadata = {
+        "module": "PowerSystems",
+        "type": type(attr).__name__,
+    }
 
     if isinstance(attr, GeographicInfo):
         return {
@@ -96,7 +100,7 @@ def serialize_single_supplemental_attribute(attr: Any) -> dict[str, Any] | None:
             },
             "transformer_winding": attr.transformer_winding.value,
             "transformer_control_mode": attr.transformer_control_mode.value,
-            "__metadata__": metadata,
+            "__metadata__": psy_metadata,
         }
 
     logger.trace("No serializer defined for supplemental attribute type {}", type(attr).__name__)

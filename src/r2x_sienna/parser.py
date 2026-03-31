@@ -616,7 +616,7 @@ class SiennaParser(Plugin[SiennaConfig]):
             logger.info("HDF5 time series loaded in {:.2f}s", time.perf_counter() - t0)
 
         except Exception as e:
-            logger.warning("Failed to load time series data: {}", e)
+            logger.error("Failed to load time series data: {}", e)
 
 
 def create_temporary_h5_storage(source_h5_path):
