@@ -116,13 +116,17 @@ def serialize_supplemental_attributes(system: Any) -> dict[str, Any]:
     associations: list[dict[str, Any]] = []
     skipped = 0
 
+    all_attrs = list(iter_supplemental_attributes(system))
+    if not all_attrs:
+        return {"attributes": [], "associations": []}
+
     attr_to_components = build_attr_to_components_map(system)
     logger.debug(
         "Built attr->component map: {} attributes with associations",
         len(attr_to_components),
     )
 
-    for attr in iter_supplemental_attributes(system):
+    for attr in all_attrs:
         sa_dict = serialize_single_supplemental_attribute(attr)
         if sa_dict is None:
             skipped += 1
@@ -297,6 +301,8 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
 
             # Patch the embedded SQLite metadata to rename legacy component types
             self._patch_time_series_owner_types(full_storage_path)
+            # Normalize embedded metadata tables/references so Julia IS migrations can load safely.
+            self._normalize_time_series_metadata(full_storage_path)
 
             self.output_json["data"]["time_series_storage_type"] = (
                 "InfrastructureSystems.Hdf5TimeSeriesStorage"
@@ -367,6 +373,15 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
                 )
         finally:
             tmp_path.unlink(missing_ok=True)
+
+    def _normalize_time_series_metadata(self, h5_path: Path) -> None:
+        """Run metadata schema/reference normalization on embedded SQLite metadata."""
+        from r2x_sienna.upgrader.data_upgrader import _upgrade_h5_time_series_metadata
+
+        result = _upgrade_h5_time_series_metadata(h5_path)
+        if result.is_err():
+            msg = str(result.err())
+            raise RuntimeError(msg)
 
 
 def to_psy(

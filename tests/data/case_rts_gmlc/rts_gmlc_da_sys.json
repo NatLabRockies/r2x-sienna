@@ -213,7 +213,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -318,7 +318,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -423,7 +423,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -528,7 +528,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -633,7 +633,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -738,7 +738,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -843,7 +843,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -948,7 +948,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -1053,7 +1053,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -1158,7 +1158,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -1263,7 +1263,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -1368,7 +1368,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -1473,7 +1473,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -1578,7 +1578,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -1683,7 +1683,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -1788,7 +1788,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -1893,7 +1893,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -1998,7 +1998,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944
@@ -2103,7 +2103,7 @@
         },
         "outflow_limits": null,
         "powerhouse_elevation": 0.0,
-        "prime_mover_type": "OT",
+        "prime_mover_type": "HY",
         "ramp_limits": {
           "down": 0.9433962264150944,
           "up": 0.9433962264150944

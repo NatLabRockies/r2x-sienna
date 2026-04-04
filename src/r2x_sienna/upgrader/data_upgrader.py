@@ -1,4 +1,6 @@
 import sqlite3
+import json
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 from uuid import uuid4
@@ -407,6 +409,256 @@ def migrate_metadata(conn: "sqlite3.Connection") -> bool:
     return True
 
 
+def _reconcile_metadata_uuid_references(conn: "sqlite3.Connection") -> int:
+    """Backfill orphan metadata references in ``time_series_associations``.
+
+    Why this exists
+    ---------------
+    Some inputs contain association rows whose ``metadata_uuid`` does not exist
+    in ``time_series_metadata``. Earlier behavior deleted those rows, which can
+    silently drop valid time series (for example, only one of static/forecast
+    variants for the same owner type).
+
+    What this function does
+    -----------------------
+    1. Verifies both required tables/columns exist.
+    2. Finds orphan association groups by ``metadata_uuid``.
+    3. Synthesizes a legacy-compatible metadata JSON blob for each orphan.
+    4. Inserts missing rows into ``time_series_metadata`` (non-destructive).
+
+    Returns
+    -------
+    int
+        Number of metadata rows inserted.
+    """
+    cursor = conn.cursor()
+
+    cursor.execute("PRAGMA table_info(time_series_associations)")
+    assoc_cols = {desc[1] for desc in cursor.fetchall()}
+    if "metadata_uuid" not in assoc_cols:
+        return 0
+
+    cursor.execute("PRAGMA table_info(time_series_metadata)")
+    meta_cols = {desc[1] for desc in cursor.fetchall()}
+    if "metadata_uuid" not in meta_cols or "metadata" not in meta_cols:
+        return 0
+
+    cursor.execute(
+        """
+        SELECT
+            a.metadata_uuid,
+            a.time_series_uuid,
+            a.time_series_type,
+            a.initial_timestamp,
+            a.resolution,
+            a.horizon,
+            a.interval,
+            a.window_count,
+            a.length,
+            a.name,
+            a.features,
+            a.scaling_factor_multiplier
+        FROM time_series_associations a
+        WHERE a.metadata_uuid NOT IN (
+            SELECT metadata_uuid FROM time_series_metadata
+        )
+        GROUP BY a.metadata_uuid
+        """
+    )
+    orphan_rows = cursor.fetchall()
+    if not orphan_rows:
+        return 0
+
+    # Build one metadata blob per orphan metadata_uuid using association row context.
+    metadata_rows = [
+        (row[0], _build_legacy_metadata_blob_from_association_row(row))
+        for row in orphan_rows
+        if row[0] is not None
+    ]
+
+    cursor.executemany(
+        """
+        INSERT OR IGNORE INTO time_series_metadata (metadata_uuid, metadata)
+        VALUES (?, ?)
+        """,
+        metadata_rows,
+    )
+    inserted = cursor.rowcount if cursor.rowcount is not None else 0
+    if inserted > 0:
+        conn.commit()
+        logger.warning(
+            "Backfilled {} missing time_series_metadata rows to preserve associations",
+            inserted,
+        )
+    return inserted
+
+
+def _build_legacy_metadata_blob_from_association_row(row: tuple[Any, ...]) -> bytes:
+    """Build a metadata JSON blob compatible with InfrastructureSystems.jl legacy migration.
+
+    Input row schema (from ``time_series_associations`` query)
+    -----------------------------------------------------------
+    ``(metadata_uuid, time_series_uuid, time_series_type, initial_timestamp,
+    resolution, horizon, interval, window_count, length, name, features,
+    scaling_factor_multiplier)``
+
+    Output
+    ------
+    UTF-8 encoded compact JSON bytes with a top-level ``__metadata__`` section.
+    This mirrors the serialized shape expected by Julia's
+    ``_deserialize_metadata`` path used during metadata-store migrations.
+    """
+
+    (
+        metadata_uuid,
+        time_series_uuid,
+        time_series_type,
+        initial_timestamp,
+        resolution,
+        horizon,
+        interval,
+        window_count,
+        length,
+        name,
+        features,
+        _scaling_factor_multiplier,
+    ) = row
+
+    metadata: dict[str, Any]
+    ts_type_str = str(time_series_type) if time_series_type is not None else "SingleTimeSeries"
+    resolution_ms = int(_duration_to_milliseconds(resolution))
+    interval_ms = int(_duration_to_milliseconds(interval or resolution))
+    horizon_ms = int(_duration_to_milliseconds(horizon or resolution))
+    internal = {
+        "uuid": {"value": str(metadata_uuid)},
+        "shared_system_references": None,
+        "units_info": None,
+        "ext": None,
+    }
+
+    # Choose metadata type by associated time-series class.
+    if ts_type_str == "DeterministicSingleTimeSeries":
+        metadata = {
+            "__metadata__": {"module": "InfrastructureSystems", "type": "DeterministicMetadata"},
+            "name": name,
+            "resolution": {"type": "Millisecond", "value": resolution_ms},
+            "initial_timestamp": str(initial_timestamp),
+            "interval": {"type": "Millisecond", "value": interval_ms},
+            "count": int(window_count or 0),
+            "time_series_uuid": {"value": str(time_series_uuid)},
+            "horizon": {"type": "Millisecond", "value": horizon_ms},
+            "time_series_type": {
+                "__metadata__": {
+                    "module": "InfrastructureSystems",
+                    "type": ts_type_str,
+                }
+            },
+            "scaling_factor_multiplier": None,
+            "features": _parse_features_dict(features),
+            "internal": internal,
+        }
+    else:
+        metadata = {
+            "__metadata__": {"module": "InfrastructureSystems", "type": "SingleTimeSeriesMetadata"},
+            "name": name,
+            "resolution": {"type": "Millisecond", "value": resolution_ms},
+            "initial_timestamp": str(initial_timestamp),
+            "time_series_uuid": {"value": str(time_series_uuid)},
+            "length": int(length or 0),
+            "scaling_factor_multiplier": None,
+            "features": _parse_features_dict(features),
+            "internal": internal,
+        }
+
+    return json.dumps(metadata, separators=(",", ":")).encode("utf-8")
+
+
+def _parse_features_dict(features: Any) -> dict[str, Any]:
+    """Normalize legacy ``features`` payloads into a plain dict.
+
+    Accepted inputs:
+    - ``None`` -> ``{}``
+    - ``dict`` -> passthrough
+    - JSON string of dict
+    - JSON string of list[dict] (flattened in order)
+
+    Unknown/invalid payloads intentionally degrade to ``{}`` to keep upgrade
+    flow non-fatal.
+    """
+    if features is None:
+        return {}
+    if isinstance(features, dict):
+        return features
+    if isinstance(features, str):
+        try:
+            parsed = json.loads(features)
+            if isinstance(parsed, dict):
+                return parsed
+            if isinstance(parsed, list):
+                out: dict[str, Any] = {}
+                for item in parsed:
+                    if isinstance(item, dict):
+                        out.update(item)
+                return out
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _duration_to_milliseconds(value: Any) -> float:
+    """Convert mixed duration formats to milliseconds.
+
+    Supported forms:
+    - ``None`` -> ``0.0``
+    - ``int|float`` interpreted as milliseconds
+    - ISO-8601 durations such as ``P0DT3600.000S`` and ``PT1H30M5.5S``
+    - ``HH:MM:SS`` strings
+    - Numeric strings
+
+    Unrecognized values return ``0.0`` to keep metadata backfill resilient.
+    """
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    text = str(value).strip()
+    if not text:
+        return 0.0
+
+    # Matches durations like P0DT3600.000S and PT1H30M5.5S
+    if text.startswith("P"):
+        m = re.fullmatch(
+            r"P(?:(?P<days>\d+)D)?(?:T(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>[\d.]+)S)?)?",
+            text,
+        )
+        if m:
+            days = float(m.group("days") or 0)
+            hours = float(m.group("hours") or 0)
+            minutes = float(m.group("minutes") or 0)
+            seconds = float(m.group("seconds") or 0)
+            total_seconds = days * 86400 + hours * 3600 + minutes * 60 + seconds
+            return total_seconds * 1000.0
+
+        m_alt = re.fullmatch(r"P\d+DT([\d.]+)S", text)
+        if m_alt:
+            return float(m_alt.group(1)) * 1000.0
+
+    # Matches HH:MM:SS
+    if ":" in text:
+        parts = text.split(":")
+        if len(parts) == 3:
+            hours = float(parts[0])
+            minutes = float(parts[1])
+            seconds = float(parts[2])
+            return (hours * 3600 + minutes * 60 + seconds) * 1000.0
+
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
 def _upgrade_h5_time_series_metadata(h5_path: Path) -> Result[bool, str]:
     """Upgrade embedded SQLite metadata in a Sienna HDF5 time series file."""
     import sqlite3
@@ -429,7 +681,9 @@ def _upgrade_h5_time_series_metadata(h5_path: Path) -> Result[bool, str]:
     try:
         conn = sqlite3.connect(tmp_path)
         try:
-            changed = migrate_metadata(conn)
+            migrated = migrate_metadata(conn)
+            removed = _reconcile_metadata_uuid_references(conn)
+            changed = migrated or removed > 0
         finally:
             conn.close()
 

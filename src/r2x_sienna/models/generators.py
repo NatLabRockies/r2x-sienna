@@ -715,7 +715,6 @@ class HybridSystem(StaticInjection):
             max_active_power=ActivePower(30.0),
             max_reactive_power=ActivePower(8.0),
             base_power=ApparentPower(50.0),
-            operation_cost=0.0,
             category="load",
         )
 

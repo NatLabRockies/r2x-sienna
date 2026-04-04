@@ -100,7 +100,6 @@ class PowerLoad(StaticLoad):
         ),
     ] = None
     comformity: LoadConformity = LoadConformity.UNDEFINED
-    operation_cost: float | None = None
 
     @classmethod
     def example(cls) -> "PowerLoad":

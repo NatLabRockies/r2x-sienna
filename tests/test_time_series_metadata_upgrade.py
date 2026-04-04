@@ -1,8 +1,9 @@
+import json
 import sqlite3
 
 from infrasys.time_series_metadata_store import create_associations_table
 
-from r2x_sienna.upgrader.data_upgrader import migrate_metadata
+from r2x_sienna.upgrader.data_upgrader import _reconcile_metadata_uuid_references, migrate_metadata
 
 
 def test_migrate_metadata_from_legacy_ms_schema():
@@ -84,3 +85,98 @@ def test_migrate_metadata_noop_when_schema_is_current():
 
     changed = migrate_metadata(con)
     assert changed is False
+
+
+def test_reconcile_metadata_uuid_references_backfills_orphan_metadata_rows():
+    con = sqlite3.connect(":memory:")
+    cur = con.cursor()
+    create_associations_table(con)
+    cur.execute(
+        """
+        CREATE TABLE time_series_metadata(
+            id INTEGER PRIMARY KEY,
+            metadata_uuid TEXT NOT NULL,
+            metadata BLOB NOT NULL
+        )
+        """
+    )
+
+    cur.execute(
+        "INSERT INTO time_series_metadata (metadata_uuid, metadata) VALUES (?, ?)",
+        ("valid-meta-uuid-0000-0000-000000000001", b"blob"),
+    )
+
+    row = {
+        "time_series_uuid": "11111111-1111-1111-1111-111111111111",
+        "time_series_type": "SingleTimeSeries",
+        "initial_timestamp": "2024-01-01T00:00:00",
+        "resolution": "P0DT300.000S",
+        "horizon": None,
+        "interval": None,
+        "window_count": None,
+        "length": 24,
+        "name": "max_active_power",
+        "owner_uuid": "22222222-2222-2222-2222-222222222222",
+        "owner_type": "PowerLoad",
+        "owner_category": "Component",
+        "features": "[]",
+        "scaling_factor_multiplier": None,
+        "units": None,
+    }
+    cur.execute(
+        """
+        INSERT INTO time_series_associations (
+            time_series_uuid, time_series_type, initial_timestamp, resolution, horizon, interval,
+            window_count, length, name, owner_uuid, owner_type, owner_category, features,
+            scaling_factor_multiplier, metadata_uuid, units
+        ) VALUES (
+            :time_series_uuid, :time_series_type, :initial_timestamp, :resolution, :horizon, :interval,
+            :window_count, :length, :name, :owner_uuid, :owner_type, :owner_category, :features,
+            :scaling_factor_multiplier, :metadata_uuid, :units
+        )
+        """,
+        {**row, "metadata_uuid": "valid-meta-uuid-0000-0000-000000000001"},
+    )
+    cur.execute(
+        """
+        INSERT INTO time_series_associations (
+            time_series_uuid, time_series_type, initial_timestamp, resolution, horizon, interval,
+            window_count, length, name, owner_uuid, owner_type, owner_category, features,
+            scaling_factor_multiplier, metadata_uuid, units
+        ) VALUES (
+            :time_series_uuid, :time_series_type, :initial_timestamp, :resolution, :horizon, :interval,
+            :window_count, :length, :name, :owner_uuid, :owner_type, :owner_category, :features,
+            :scaling_factor_multiplier, :metadata_uuid, :units
+        )
+        """,
+        {
+            **row,
+            "owner_uuid": "33333333-3333-3333-3333-333333333333",
+            "metadata_uuid": "orphan-meta-uuid-0000-0000-000000000002",
+        },
+    )
+    con.commit()
+
+    inserted = _reconcile_metadata_uuid_references(con)
+    assert inserted == 1
+
+    remaining = con.execute(
+        "SELECT metadata_uuid FROM time_series_associations ORDER BY metadata_uuid"
+    ).fetchall()
+    assert remaining == [
+        ("orphan-meta-uuid-0000-0000-000000000002",),
+        ("valid-meta-uuid-0000-0000-000000000001",),
+    ]
+
+    backfilled = con.execute(
+        "SELECT metadata_uuid, metadata FROM time_series_metadata ORDER BY metadata_uuid"
+    ).fetchall()
+    assert [row[0] for row in backfilled] == [
+        "orphan-meta-uuid-0000-0000-000000000002",
+        "valid-meta-uuid-0000-0000-000000000001",
+    ]
+
+    orphan_payload = json.loads(backfilled[0][1].decode("utf-8"))
+    assert "__metadata__" in orphan_payload
+    assert orphan_payload["__metadata__"]["module"] == "InfrastructureSystems"
+    assert orphan_payload["__metadata__"]["type"] == "SingleTimeSeriesMetadata"
