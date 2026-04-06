@@ -10,6 +10,7 @@ from typing import IO, Any
 from uuid import UUID
 
 import h5py
+from infrasys import Component
 from infrasys.h5_time_series_storage import HDF5TimeSeriesStorage
 from infrasys.serialization import (
     TYPE_METADATA,
@@ -447,7 +448,16 @@ class SiennaParser(Plugin[SiennaConfig]):
             return None
 
         metadata = SerializedTypeMetadata.validate_python(component[TYPE_METADATA])
-        component_type = cached_types.get_type(metadata)
+        component_type_raw = cached_types.get_type(metadata)
+        if not isinstance(component_type_raw, type) or not issubclass(component_type_raw, Component):
+            logger.warning(
+                "Skipped unsupported deserialized type {}.{}",
+                metadata.module,
+                metadata.type,
+            )
+            return None
+
+        component_type: type[Component] = component_type_raw
         component_name = values.get("name", "<unnamed>")
         logger.trace("Deserializing {} '{}'", component_type.__name__, component_name)
 

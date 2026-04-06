@@ -1,8 +1,8 @@
-import sqlite3
 import json
 import re
+import sqlite3
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, ClassVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Protocol
 from uuid import uuid4
 
 from loguru import logger
@@ -79,6 +79,12 @@ class SiennaVersionDetector(VersionReader):
             return None
 
 
+class UpgradeCallable(Protocol):
+    __name__: str
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
 class SiennaUpgrader:
     """Standalone upgrader class for Sienna files.
 
@@ -98,7 +104,7 @@ class SiennaUpgrader:
         target_version: str,
         upgrade_type: UpgradeType = UpgradeType.FILE,
         priority: int = 0,
-    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    ) -> Callable[[UpgradeCallable], UpgradeCallable]:
         """Decorator to register an upgrade step function.
 
         Parameters
@@ -116,7 +122,7 @@ class SiennaUpgrader:
             Decorator function that registers the step.
         """
 
-        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        def decorator(func: UpgradeCallable) -> UpgradeCallable:
             step = UpgradeStep(
                 name=func.__name__,
                 func=func,
@@ -229,7 +235,7 @@ class SiennaUpgrader:
                 if step.upgrade_type != upgrade_type:
                     logger.trace(
                         "Skipping step {} (type={}, want={})",
-                        step.func.__name__,
+                        step.name,
                         step.upgrade_type.name,
                         upgrade_type.name,
                     )
@@ -238,7 +244,7 @@ class SiennaUpgrader:
                 if should_upgrade.is_err() or not should_upgrade.ok():
                     logger.trace(
                         "Skipping step {} (version check: current={}, target={})",
-                        step.func.__name__,
+                        step.name,
                         original_version,
                         step.target_version,
                     )
@@ -246,7 +252,7 @@ class SiennaUpgrader:
 
                 logger.debug(
                     "Running upgrade step: {} (target_version={})",
-                    step.func.__name__,
+                    step.name,
                     step.target_version,
                 )
                 t0 = time.perf_counter()
@@ -255,12 +261,12 @@ class SiennaUpgrader:
                     modified = True
                     steps_run += 1
                 except Exception as e:
-                    logger.error("Upgrade step {} failed: {}", step.func.__name__, e)
-                    return Err(f"Failed {step.func.__name__}: {e}")
+                    logger.error("Upgrade step {} failed: {}", step.name, e)
+                    return Err(f"Failed {step.name}: {e}")
                 current_version = step.target_version
                 logger.debug(
                     "Upgrade step {} completed in {:.2f}s",
-                    step.func.__name__,
+                    step.name,
                     time.perf_counter() - t0,
                 )
 
@@ -268,6 +274,7 @@ class SiennaUpgrader:
                 try:
                     with open(json_path, "w") as f:
                         json.dump(system_data, f)
+                        f.write("\n")
                     logger.info(
                         "Applied {} upgrade steps, wrote {} (now version {})",
                         steps_run,
@@ -288,7 +295,7 @@ class SiennaUpgrader:
             should_upgrade = shall_we_upgrade(step, current_version=current_version, strategy=strategy)
             if should_upgrade.is_err() or not should_upgrade.ok():
                 continue
-            logger.debug("Running file upgrade step: {}", step.func.__name__)
+            logger.debug("Running file upgrade step: {}", step.name)
             result = run_upgrade_step(self.path, step=step)
             if result.is_err():
                 return Err(str(result.err()))

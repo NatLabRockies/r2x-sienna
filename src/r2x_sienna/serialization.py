@@ -131,7 +131,8 @@ def _get_parametrized_type(field: str, value: Any) -> str | None:
 
 def _add_psy_metadata(component: Component, data: dict[str, Any]) -> dict[str, Any]:
     cls = type(component)
-    data["__metadata__"] = {"module": "PowerSystems", "type": cls.__name__}
+    metadata: dict[str, Any] = {"module": "PowerSystems", "type": cls.__name__}
+    data["__metadata__"] = metadata
 
     if isinstance(component, Component):
         data["internal"] = {
@@ -142,10 +143,15 @@ def _add_psy_metadata(component: Component, data: dict[str, Any]) -> dict[str, A
 
     parametrized_fields = component.model_fields_set & PARAMETRIZED_FIELDS
     if parametrized_fields:
-        data["__metadata__"]["construct_with_parameters"] = True
+        parameters: list[str] = []
         for parametrized_field in parametrized_fields:
             parameter = _get_parametrized_type(parametrized_field, getattr(component, parametrized_field))
-            data["__metadata__"]["parameters"] = [parameter]
+            if parameter is not None:
+                parameters.append(parameter)
+
+        if parameters:
+            metadata["construct_with_parameters"] = True
+            metadata["parameters"] = parameters
 
     return data
 

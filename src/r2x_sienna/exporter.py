@@ -40,7 +40,7 @@ def build_attr_to_components_map(system: Any) -> dict[Any, list[Any]]:
     for component in system._component_mgr.iter_all():
         if not system.has_supplemental_attribute(component):
             continue
-        for attr in system.get_supplemental_attributes_with_component(component):  # type: ignore
+        for attr in system.get_supplemental_attributes_with_component(component):
             attr_uuid = getattr(attr, "uuid", None)
             if attr_uuid is not None:
                 attr_to_components.setdefault(attr_uuid, []).append(component)
@@ -408,11 +408,12 @@ def to_psy(
         scenario=getattr(config, "scenario", "base"),
     )
 
-    ctx: PluginContext[SiennaExporterConfig] = PluginContext(config=exporter_config, system=system)
     store = DataStore(path=Path(filename).parent)
+    ctx: PluginContext[SiennaExporterConfig] = PluginContext(
+        config=exporter_config, system=system, store=store
+    )
     exporter = SiennaExporter()
     exporter._ctx = ctx  # type: ignore[assignment]
-    exporter._store = store  # type: ignore[attr-defined]
     exporter.system_data = system_data
 
     result = exporter.on_validate()

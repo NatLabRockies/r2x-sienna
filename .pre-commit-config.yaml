@@ -17,37 +17,29 @@ repos:
 
       - id: ruff-check
         name: ruff check
-        entry: uv run ruff check --fix --config=pyproject.toml
+        entry: uv run ruff check --fix --config=pyproject.toml ./src/r2x_sienna/
         language: system
         types_or: [python, pyi]
 
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
-    hooks:
-      - id: check-added-large-files
-        args: ["--maxkb=10000"]
-      - id: end-of-file-fixer
-      - id: trailing-whitespace
-      - id: check-added-large-files
-      - id: check-merge-conflict
-      - id: check-yaml
-      - id: check-toml
-      - id: check-json
-      - id: check-case-conflict
-      - id: check-xml
-      - id: pretty-format-json
-        args: ["--autofix", "--no-ensure-ascii"]
-        files: "\\.(json)$"
+      - id: ty
+        name: ty
+        entry: uv run ty check ./src/r2x_sienna/
+        language: system
+        types: [python]
+        pass_filenames: false
 
-  - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.10.0
-    hooks:
-      - id: commitizen
-        stages:
-          - commit-msg
+      - id: taplo-format
+        name: taplo format
+        entry: uv run taplo fmt --check
+        language: system
+        types_or: [toml]
 
-  - repo: local
-    hooks:
+      - id: taplo-lint
+        name: taplo lint
+        entry: uv run taplo check
+        language: system
+        types_or: [toml]
+
       - id: pytest
         name: pytest (quick)
         entry: uv run pytest -q -m "not slow" --maxfail=1 --disable-warnings
@@ -56,18 +48,33 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-case-conflict
+      - id: fix-byte-order-marker
+      - id: check-xml
+      - id: mixed-line-ending
+      - id: check-symlinks
+      - id: detect-private-key
+      - id: no-commit-to-branch
+      - id: check-executables-have-shebangs
+
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.10.0
+    hooks:
+      - id: commitizen
+        stages:
+          - commit-msg
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    # uv version.
     rev: 0.9.4
     hooks:
       - id: uv-lock
-
-  - repo: local
-    hooks:
-      - id: mypy
-        name: mypy
-        entry: uv run mypy --config-file=pyproject.toml ./src/r2x_sienna
-        language: system
-        types: [python]
-        pass_filenames: false
