@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/NREL-Sienna/r2x-sienna/compare/v0.2.0...v0.2.1) (2026-04-06)
+
+
+### Documentation
+
+* adding more creative readme ([#32](https://github.com/NREL-Sienna/r2x-sienna/issues/32)) ([7a7bf74](https://github.com/NREL-Sienna/r2x-sienna/commit/7a7bf7438ab26a44e1952b3c9d49d8a57176790a))
+
 ## [0.2.0](https://github.com/NREL-Sienna/r2x-sienna/compare/v0.1.0...v0.2.0) (2026-04-06)
 
 
