@@ -71,11 +71,15 @@ extend-exclude = [".venv", "venv", "build", "dist", "*.egg-info"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-addopts = ["--cov=r2x_sienna", "--cov-report=term-missing"]
+addopts = ["--cov=r2x_sienna", "--cov-report=term-missing", "--cov-fail-under=90"]
 filterwarnings = [
   "ignore::DeprecationWarning:infrasys.*",
   "ignore::pydantic._internal._generate_schema.UnsupportedFieldAttributeWarning",
 ]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
 
 
 [tool.commitizen]
