@@ -631,11 +631,12 @@ def remove_time_series_container(system_data: dict[str, Any]) -> dict[str, Any]:
 
 @SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
 def upgrade_geographic_info(system_data: dict[str, Any]) -> dict[str, Any]:
-    if not system_data_has_right_keys(system_data):
-        logger.debug("No data found. Skipping step")
+    data = system_data.get("data")
+    if not isinstance(data, dict):
+        logger.debug("No data section found. Skipping step")
         return system_data
 
-    attr_mgr = system_data["data"].get("supplemental_attribute_manager")
+    attr_mgr = data.get("supplemental_attribute_manager")
     if not attr_mgr or not attr_mgr.get("attributes"):
         logger.debug("No supplemental_attribute_manager or attributes found. Skipping step")
         return system_data
