@@ -30,13 +30,13 @@ repos:
 
       - id: taplo-format
         name: taplo format
-        entry: uv run taplo fmt --check
+        entry: uvx --from taplo taplo fmt --check
         language: system
         types_or: [toml]
 
       - id: taplo-lint
         name: taplo lint
-        entry: uv run taplo check
+        entry: uvx --from taplo taplo check
         language: system
         types_or: [toml]
 

@@ -24,6 +24,7 @@ from .core import ReserveMap, Service, TransmissionInterfaceMap
 from .costs import (
     HydroGenerationCost,
     HydroReservoirCost,
+    LoadCost,
     RenewableGenerationCost,
     StorageCost,
     ThermalGenerationCost,
@@ -49,6 +50,7 @@ from .enums import (
 from .generators import (
     EnergyReservoirStorage,
     Generator,
+    Source,
     HybridSystem,
     HydroDispatch,
     HydroEnergyReservoir,
@@ -137,11 +139,13 @@ __all__ = [
     # costs
     "HydroGenerationCost",
     "HydroReservoirCost",
+    "LoadCost",
     "RenewableGenerationCost",
     "StorageCost",
     "ThermalGenerationCost",
     # generators
     "Generator",
+    "Source",
     "Storage",
     "SynchronousCondenser",
     "EnergyReservoirStorage",

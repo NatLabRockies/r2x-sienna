@@ -4,9 +4,14 @@ from operator import attrgetter
 from typing import Annotated
 
 from infrasys.cost_curves import CostCurve, FuelCurve, UnitSystem
+from infrasys.function_data import PiecewiseStepData
 from infrasys.models import InfraSysBaseModel
-from infrasys.value_curves import LinearCurve
-from pydantic import Field, NonNegativeFloat, computed_field
+from infrasys.time_series_models import TimeSeriesKey
+from infrasys.value_curves import LinearCurve, IncrementalCurve
+from pydantic import Field, NonNegativeFloat, computed_field, model_validator
+
+from .core import Service
+from .named_tuples import StartUpStages
 
 
 class OperationalCost(InfraSysBaseModel):
@@ -41,6 +46,10 @@ class OperationalCost(InfraSysBaseModel):
             return type(attrgetter("variable.value_curve.function_data")(self)).__name__
         except AttributeError:
             return None
+
+
+class OfferCurveCost(OperationalCost):
+    """Abstract base type for market offer-curve operational costs."""
 
 
 class RenewableGenerationCost(OperationalCost):
@@ -109,6 +118,47 @@ class StorageCost(OperationalCost):
     start_up: Annotated[NonNegativeFloat | None, Field(description="Cost to start the unit.")] = 0.0
 
 
+class LoadCost(OperationalCost):
+    """An operational cost for controllable loads.
+
+    Includes a required variable cost curve and an optional fixed-cost component.
+    """
+
+    variable: Annotated[
+        CostCurve,
+        Field(description="Variable cost represented as a CostCurve."),
+    ]
+    fixed: Annotated[
+        float,
+        Field(
+            description=("Fixed cost component. For some cost representations this field can be duplicative.")
+        ),
+    ] = 0.0
+
+    @classmethod
+    def example(cls) -> "LoadCost":
+        return LoadCost(
+            variable=CostCurve(value_curve=LinearCurve(0), power_units=UnitSystem.NATURAL_UNITS),
+            fixed=0.0,
+        )
+
+    def get_variable(self) -> CostCurve:
+        """Get LoadCost variable."""
+        return self.variable
+
+    def get_fixed(self) -> float:
+        """Get LoadCost fixed value."""
+        return self.fixed
+
+    def set_variable(self, value: CostCurve) -> None:
+        """Set LoadCost variable."""
+        self.variable = value
+
+    def set_fixed(self, value: float) -> None:
+        """Set LoadCost fixed value."""
+        self.fixed = value
+
+
 class HydroReservoirCost(OperationalCost):
     """An operational cost for HydroReservoirs
 
@@ -130,15 +180,7 @@ class HydroReservoirCost(OperationalCost):
         return HydroReservoirCost(level_shortage_cost=0.0, spillage_cost=0.0, level_surplus_cost=0.0)
 
 
-class StartUpStages(InfraSysBaseModel):
-    """Start-up costs at different stages of the thermal cycle."""
-
-    hot: Annotated[float, Field(description="Hot start-up cost")] = 0.0
-    warm: Annotated[float, Field(description="Warm/intermediate start-up cost")] = 0.0
-    cold: Annotated[float, Field(description="Cold start-up cost")] = 0.0
-
-
-class MarketBidCost(OperationalCost):
+class MarketBidCost(OfferCurveCost):
     """An operating cost for market bids of energy and ancillary services for any asset.
 
     Compatible with most US Market bidding mechanisms that support demand and generation side.
@@ -201,3 +243,89 @@ class MarketBidCost(OperationalCost):
             decremental_offer_curves=None,
             incremental_initial_input=10.0,
         )
+
+
+class ImportExportCost(OfferCurveCost):
+    """An operating cost for imports/exports and ancillary services from neighboring areas.
+    The data model employs a CostCurve{PiecewiseIncrementalCurve} with an implied zero cost at zero power.
+    """
+
+    import_offer_curves: Annotated[
+        TimeSeriesKey | CostCurve | None,
+        Field(
+            description=(
+                "Buy Price Curves data to import power, which can be a time series of [PiecewiseStepData] or a CostCurve of PiecewiseIncrementalCurve"
+            )
+        ),
+    ] = None
+
+    export_offer_curves: Annotated[
+        TimeSeriesKey | CostCurve | None,
+        Field(
+            description=(
+                "Sell Price Curves data to export power, which can be a time series of PiecewiseStepData or a CostCurve of PiecewiseIncrementalCurve"
+            )
+        ),
+    ] = None
+
+    energy_import_weekly_limit: Annotated[
+        float,
+        Field(
+            description="Weekly limit on the amount of energy that can be imported, defined in system base p.u-hours."
+        ),
+    ] = float("inf")
+
+    energy_export_weekly_limit: Annotated[
+        float,
+        Field(
+            description="Weekly limit on the amount of energy that can be exported, defined in system base p.u-hours."
+        ),
+    ] = float("inf")
+
+    ancillary_service_offers: Annotated[
+        list[Service],
+        Field(description="Ancillary service offer data associated with import/export bidding."),
+    ] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_offer_curves(self) -> "ImportExportCost":
+        if isinstance(self.import_offer_curves, CostCurve) and not _is_import_export_curve(
+            self.import_offer_curves
+        ):
+            msg = "import_offer_curves must be a CostCurve with IncrementalCurve backed by "
+            msg += "PiecewiseStepData initial_input=0.0 input_at_zero=0.0 and first x=0.0"
+            raise ValueError(msg)
+
+        if isinstance(self.export_offer_curves, CostCurve) and not _is_import_export_curve(
+            self.export_offer_curves
+        ):
+            msg = "export_offer_curves must be a CostCurve with IncrementalCurve backed by "
+            msg += "PiecewiseStepData initial_input=0.0 input_at_zero=0.0 and first x=0.0"
+            raise ValueError(msg)
+
+        return self
+
+    @classmethod
+    def example(cls) -> "ImportExportCost":
+        return ImportExportCost(
+            import_offer_curves=CostCurve(
+                value_curve=LinearCurve(35.0), power_units=UnitSystem.NATURAL_UNITS
+            ),
+            export_offer_curves=CostCurve(
+                value_curve=LinearCurve(35.0), power_units=UnitSystem.NATURAL_UNITS
+            ),
+            energy_import_weekly_limit=1e6,
+            energy_export_weekly_limit=1e6,
+        )
+
+
+def _is_import_export_curve(curve: CostCurve) -> bool:
+    value_curve = curve.value_curve
+    if not isinstance(value_curve, IncrementalCurve):
+        return False
+
+    data = value_curve.function_data
+    if not isinstance(data, PiecewiseStepData):
+        return False
+
+    return value_curve.initial_input == 0.0 and value_curve.input_at_zero == 0.0 and data.x_coords[0] == 0.0

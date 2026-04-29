@@ -10,6 +10,7 @@ from unittest.mock import Mock
 import pytest
 from r2x_core import DataStore, PluginContext
 
+from r2x_sienna.models import Source
 from r2x_sienna.plugin_config import SiennaConfig
 from r2x_sienna.parser import SiennaParser
 
@@ -65,6 +66,38 @@ def test_parser_system_access(sienna_config: SiennaConfig, mock_data_store: Mock
     # System should raise PluginError when not set in context
     with pytest.raises(PluginError, match="System not provided"):
         _ = parser.system
+
+
+def test_parser_builds_2area_5bus_with_source(data_folder: Path):
+    """Parse the 2area-5bus test system and verify Source deserialization."""
+    case_path = data_folder / "2area-5bus-system"
+    config = SiennaConfig(
+        model_year=2029,
+        system_name="2area-5bus-system",
+        scenario="test_source_parse",
+        system_base_power=100.0,
+        skip_validation=False,
+        json_path=str(case_path / "test_system.json"),
+    )
+
+    ctx = PluginContext(
+        config=config,
+        store=DataStore(path=case_path),
+        skip_validation=config.skip_validation,
+    )
+    parser = SiennaParser.from_context(ctx)
+    result_ctx = parser.run()
+    system = result_ctx.system
+
+    sources = [component for component in system._component_mgr.iter_all() if isinstance(component, Source)]
+    assert sources, "Expected at least one Source component in parsed system"
+
+    source_names = {source.name for source in sources}
+    assert "source_bus1" in source_names
+
+    source_bus1 = next(source for source in sources if source.name == "source_bus1")
+    assert source_bus1.operation_cost is not None
+    assert source_bus1.operation_cost.ancillary_service_offers == []
 
 
 class TestDeserializeComponentsNested:

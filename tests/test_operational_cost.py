@@ -1,7 +1,9 @@
-from infrasys.cost_curves import FuelCurve, UnitSystem
+import pytest
+from infrasys.cost_curves import CostCurve, FuelCurve, UnitSystem
 from infrasys.value_curves import LinearCurve
 from r2x_sienna.models.costs import (
     HydroGenerationCost,
+    LoadCost,
     OperationalCost,
     RenewableGenerationCost,
     StorageCost,
@@ -55,3 +57,28 @@ def test_default_fields():
     assert cost.fixed == 0.0
     assert cost.shut_down == 0.0
     assert cost.start_up == 0.0
+
+    cost = LoadCost(variable=CostCurve(value_curve=LinearCurve(0), power_units=UnitSystem.NATURAL_UNITS))
+    assert isinstance(cost, OperationalCost)
+    assert isinstance(cost, LoadCost)
+    assert cost.fixed == 0.0
+
+
+def test_load_cost_requires_variable():
+    with pytest.raises(Exception):
+        LoadCost()  # type: ignore[call-arg]
+
+
+def test_load_cost_getters_setters():
+    initial_curve = CostCurve(value_curve=LinearCurve(0), power_units=UnitSystem.NATURAL_UNITS)
+    updated_curve = CostCurve(value_curve=LinearCurve(5), power_units=UnitSystem.NATURAL_UNITS)
+    cost = LoadCost(variable=initial_curve)
+
+    assert cost.get_variable() == initial_curve
+    assert cost.get_fixed() == 0.0
+
+    cost.set_variable(updated_curve)
+    cost.set_fixed(12.5)
+
+    assert cost.get_variable() == updated_curve
+    assert cost.get_fixed() == 12.5

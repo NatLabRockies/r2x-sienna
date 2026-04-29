@@ -17,6 +17,7 @@ from .costs import (
     RenewableGenerationCost,
     StorageCost,
     ThermalGenerationCost,
+    ImportExportCost,
 )
 from .enums import (
     HydroTurbineType,
@@ -49,6 +50,82 @@ class RenewableGen(Generator):
 
 class HydroGen(Generator):
     """Abstract class for Hydro generators"""
+
+
+class Source(StaticInjection):
+    """An infinite bus with a constant voltage output.
+    Commonly used in dynamics simulations to represent a very large machine on a single bus or
+    for the representation of import/exports in operational simulations
+    """
+
+    bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
+
+    active_power: Annotated[
+        float,
+        Unit("pu", base="base_power"),
+        Field(description="Initial active power set point of the unit (MW)."),
+    ]
+
+    reactive_power: Annotated[
+        float,
+        Unit("pu", base="base_power"),
+        Field(description="Initial reactive power set point of the unit (MVAR)."),
+    ]
+
+    active_power_limits: Annotated[MinMax, Field(description="Active power limits of the unit (MW).")]
+
+    reactive_power_limits: Annotated[
+        MinMax | None,
+        Field(description="Reactive power limits of the unit (MVAr)."),
+    ] = None
+
+    R_th: Annotated[
+        float,
+        Unit("pu", base="base_power"),
+        Field(description="Source Thevenin resistance."),
+    ]
+    X_th: Annotated[
+        float,
+        Unit("pu", base="base_power"),
+        Field(description="Source Thevenin reactance."),
+    ]
+    internal_voltage: Annotated[
+        float,
+        Unit("pu", base="base_power"),
+        Field(description="Internal voltage of the source (p.u.)."),
+    ]
+    internal_angle: Annotated[
+        float,
+        Unit("deg"),
+        Field(description="Internal angle of the source (radians)."),
+    ]
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
+    operation_cost: Annotated[ImportExportCost, Field(description="Operational cost.")]
+
+    @classmethod
+    def example(cls) -> "Source":
+        return Source(
+            name="source-test",
+            available=True,
+            bus=ACBus.example(),
+            active_power=0.0,
+            reactive_power=0.0,
+            active_power_limits=MinMax(min=0.0, max=100.0),
+            reactive_power_limits=MinMax(min=-100.0, max=100.0),
+            base_power=100.0,
+            R_th=0.01,
+            X_th=0.1,
+            internal_voltage=1.0,
+            internal_angle=0.0,
+            operation_cost=ImportExportCost(),
+        )
 
 
 class ThermalStandard(ThermalGen):

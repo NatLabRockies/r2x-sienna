@@ -4,6 +4,7 @@ from typing import Annotated
 
 from pydantic import Field, NonNegativeFloat
 
+from r2x_sienna.models.costs import LoadCost
 from r2x_sienna.models.core import StaticInjection
 from r2x_sienna.models.enums import FACTSOperationModes, LoadConformity
 from r2x_sienna.models.named_tuples import Complex, MinMax
@@ -154,7 +155,7 @@ class InterruptiblePowerLoad(ControllableLoad):
     max_reactive_power: (
         Annotated[ActivePower, Field(gt=0, description=" Initial steady-state reactive power demand.")] | None
     ) = None
-    operation_cost: float | None = None
+    operation_cost: LoadCost | None = None
     comformity: LoadConformity = LoadConformity.UNDEFINED
 
 
