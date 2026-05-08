@@ -528,7 +528,7 @@ def _build_legacy_metadata_blob_from_association_row(row: tuple[Any, ...]) -> by
         length,
         name,
         features,
-        _scaling_factor_multiplier,
+        scaling_factor_multiplier,
     ) = row
 
     metadata: dict[str, Any]
@@ -542,6 +542,7 @@ def _build_legacy_metadata_blob_from_association_row(row: tuple[Any, ...]) -> by
         "units_info": None,
         "ext": None,
     }
+    scaling_multiplier_payload = _parse_scaling_factor_multiplier(scaling_factor_multiplier)
 
     # Choose metadata type by associated time-series class.
     if ts_type_str == "DeterministicSingleTimeSeries":
@@ -560,7 +561,7 @@ def _build_legacy_metadata_blob_from_association_row(row: tuple[Any, ...]) -> by
                     "type": ts_type_str,
                 }
             },
-            "scaling_factor_multiplier": None,
+            "scaling_factor_multiplier": scaling_multiplier_payload,
             "features": _parse_features_dict(features),
             "internal": internal,
         }
@@ -572,7 +573,7 @@ def _build_legacy_metadata_blob_from_association_row(row: tuple[Any, ...]) -> by
             "initial_timestamp": str(initial_timestamp),
             "time_series_uuid": {"value": str(time_series_uuid)},
             "length": int(length or 0),
-            "scaling_factor_multiplier": None,
+            "scaling_factor_multiplier": scaling_multiplier_payload,
             "features": _parse_features_dict(features),
             "internal": internal,
         }
@@ -610,6 +611,22 @@ def _parse_features_dict(features: Any) -> dict[str, Any]:
         except json.JSONDecodeError:
             return {}
     return {}
+
+
+def _parse_scaling_factor_multiplier(value: Any) -> dict[str, Any] | None:
+    """Normalize scaling_factor_multiplier payloads to legacy metadata shape."""
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            return None
+    return None
 
 
 def _duration_to_milliseconds(value: Any) -> float:
