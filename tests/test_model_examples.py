@@ -30,3 +30,34 @@ def test_thermal_standard_model():
     ]
 
     assert all(field in ts_dict for field in required_fields)
+
+
+def test_service_and_topology_examples():
+    """Test service and topology example constructors."""
+    from r2x_sienna.models.services import Reserve, TransmissionInterface
+    from r2x_sienna.models.topology import DCBus
+
+    reserve = Reserve.example()
+    interface = TransmissionInterface.example()
+    dc_bus = DCBus.example()
+
+    assert reserve.name == "ExampleReserve"
+    assert reserve.region is not None
+    assert interface.active_power_flow_limits.min == -100
+    assert "line-01" in interface.direction_mapping
+    assert dc_bus.base_voltage is not None
+
+
+def test_load_examples():
+    """Test load-related example constructors."""
+    from r2x_sienna.models.load import FACTSControlDevice, FixedAdmittance, PowerLoad, SwitchedAdmittance
+
+    facts = FACTSControlDevice.example()
+    power_load = PowerLoad.example()
+    fixed = FixedAdmittance.example()
+    switched = SwitchedAdmittance.example()
+
+    assert facts.control_mode is not None
+    assert power_load.active_power is not None
+    assert fixed.Y.imag < 0
+    assert len(switched.number_of_steps) == 3

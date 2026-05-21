@@ -29,14 +29,12 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
-  "License :: OSI Approved :: BSD License",
   "Natural Language :: English",
   "Operating System :: OS Independent",
   "Topic :: File Formats :: JSON",
   "Topic :: Scientific/Engineering",
   "Topic :: Scientific/Engineering :: Information Analysis",
   "Topic :: Scientific/Engineering :: Interface Engine/Protocol Translator",
-  "Topic :: Software Development :: Build Tools",
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Typing :: Typed",
 ]
@@ -71,11 +69,19 @@ extend-exclude = [".venv", "venv", "build", "dist", "*.egg-info"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-addopts = ["--cov=r2x_sienna", "--cov-report=term-missing"]
+addopts = [
+  "--cov=r2x_sienna",
+  "--cov-report=term-missing",
+  "--cov-fail-under=90",
+]
 filterwarnings = [
   "ignore::DeprecationWarning:infrasys.*",
   "ignore::pydantic._internal._generate_schema.UnsupportedFieldAttributeWarning",
 ]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
 
 
 [tool.commitizen]

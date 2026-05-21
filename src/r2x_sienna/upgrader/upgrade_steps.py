@@ -173,6 +173,67 @@ def _patch_three_winding_transformer(
             comp[field] = default
 
 
+def _coerce_coordinate_value(value: Any, component_name: str) -> float:
+    """Return a valid float coordinate, coercing invalid values to 0.0."""
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            try:
+                return float(stripped)
+            except ValueError:
+                pass
+
+    logger.warning(
+        "GeographicInfo component '{}' has invalid coordinate value '{}'. Defaulting to 0.0.",
+        component_name,
+        value,
+    )
+    return 0.0
+
+
+def _sanitize_geojson_coordinates(
+    raw_coordinates: Any, component_name: str
+) -> list[float] | list[list[float]]:
+    """Normalize GeoJSON coordinates into a Pydantic-compatible list shape."""
+    if not isinstance(raw_coordinates, list) or not raw_coordinates:
+        logger.warning(
+            "GeographicInfo component '{}' has invalid coordinates '{}'. Defaulting to [0.0, 0.0].",
+            component_name,
+            raw_coordinates,
+        )
+        return [0.0, 0.0]
+
+    if all(not isinstance(item, list) for item in raw_coordinates):
+        longitude = _coerce_coordinate_value(
+            raw_coordinates[0] if len(raw_coordinates) > 0 else None, component_name
+        )
+        latitude = _coerce_coordinate_value(
+            raw_coordinates[1] if len(raw_coordinates) > 1 else None, component_name
+        )
+        return [longitude, latitude]
+
+    if all(isinstance(item, list) for item in raw_coordinates):
+        sanitized_nested: list[list[float]] = []
+        for point in raw_coordinates:
+            if not point:
+                sanitized_nested.append([0.0, 0.0])
+                continue
+            longitude = _coerce_coordinate_value(point[0] if len(point) > 0 else None, component_name)
+            latitude = _coerce_coordinate_value(point[1] if len(point) > 1 else None, component_name)
+            sanitized_nested.append([longitude, latitude])
+        return sanitized_nested
+
+    logger.warning(
+        "GeographicInfo component '{}' has mixed coordinate nesting '{}'. Defaulting to [0.0, 0.0].",
+        component_name,
+        raw_coordinates,
+    )
+    return [0.0, 0.0]
+
+
 def system_data_has_right_keys(system_data: dict[str, Any]) -> bool:
     return bool(system_data.get("data", {}).get("components"))
 
@@ -570,16 +631,18 @@ def remove_time_series_container(system_data: dict[str, Any]) -> dict[str, Any]:
 
 @SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
 def upgrade_geographic_info(system_data: dict[str, Any]) -> dict[str, Any]:
-    if not system_data_has_right_keys(system_data):
-        logger.debug("No data found. Skipping step")
+    data = system_data.get("data")
+    if not isinstance(data, dict):
+        logger.debug("No data section found. Skipping step")
         return system_data
 
-    attr_mgr = system_data["data"].get("supplemental_attribute_manager")
+    attr_mgr = data.get("supplemental_attribute_manager")
     if not attr_mgr or not attr_mgr.get("attributes"):
         logger.debug("No supplemental_attribute_manager or attributes found. Skipping step")
         return system_data
 
     for comp in attr_mgr["attributes"]:
+        comp_name = comp.get("name", "<unknown>")
         comp_type = comp.get("__metadata__", {}).get("type", "")
         if comp_type != "GeographicInfo":
             continue
@@ -588,33 +651,29 @@ def upgrade_geographic_info(system_data: dict[str, Any]) -> dict[str, Any]:
         if geo_json is None:
             logger.warning(
                 "GeographicInfo component '{}' has no geo_json field. Skipping.",
-                comp.get("name", "<unknown>"),
+                comp_name,
             )
             continue
 
-        # Already in the new GeoJSON format (coordinates + type)
-        if "coordinates" in geo_json and "type" in geo_json:
-            logger.debug(
-                "GeographicInfo component '{}' geo_json already upgraded. Skipping.",
-                comp.get("name", "<unknown>"),
-            )
-            continue
-
-        longitude = geo_json.get("Longitude")
-        latitude = geo_json.get("Latitude")
-
-        if longitude is None or latitude is None:
-            missing = [k for k, v in (("Longitude", longitude), ("Latitude", latitude)) if v is None]
-            logger.warning(
-                "GeographicInfo component '{}' geo_json is missing required key(s): {}. Skipping.",
-                comp.get("name", "<unknown>"),
-                missing,
-            )
-            continue
+        if "coordinates" in geo_json:
+            geo_type = geo_json.get("type") or "Point"
+            coordinates = geo_json.get("coordinates")
+        else:
+            longitude = geo_json.get("Longitude")
+            latitude = geo_json.get("Latitude")
+            if longitude is None or latitude is None:
+                missing = [k for k, v in (("Longitude", longitude), ("Latitude", latitude)) if v is None]
+                logger.warning(
+                    "GeographicInfo component '{}' geo_json is missing required key(s): {}. Defaulting missing values to 0.0.",
+                    comp_name,
+                    missing,
+                )
+            geo_type = "Point"
+            coordinates = [longitude, latitude]
 
         comp["geo_json"] = {
-            "coordinates": [longitude, latitude],
-            "type": "Point",
+            "coordinates": _sanitize_geojson_coordinates(coordinates, comp_name),
+            "type": geo_type,
         }
 
     logger.debug("Successfully completed upgrading GeographicInfo in upgrade_geographic_info.")

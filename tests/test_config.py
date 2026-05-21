@@ -84,3 +84,9 @@ def test_sienna_config_with_defaults(tmp_path):
 
     defaults = SiennaConfig.load_defaults(defaults_file=test_file)
     assert defaults["excluded_techs"] == ["coal", "oil"]
+
+
+def test_sienna_config_load_defaults_without_path_raises_file_not_found():
+    """Test that package default path is attempted when defaults_file is None."""
+    with pytest.raises(FileNotFoundError):
+        SiennaConfig.load_defaults()

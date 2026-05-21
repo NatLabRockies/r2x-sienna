@@ -3,13 +3,16 @@ import json
 import pytest
 from infrasys import System
 from infrasys.cost_curves import FuelCurve, UnitSystem
+from infrasys.function_data import XYCoords
 from infrasys.value_curves import LinearCurve
 
 from r2x_sienna.plugin_config import SiennaConfig
 from r2x_sienna.exporter import to_psy
 from r2x_sienna.models import (
     ACBus,
+    Arc,
     Complex,
+    FromTo_ToFrom,
     InputOutput,
     MinMax,
     PrimeMoversType,
@@ -156,6 +159,21 @@ def test_psy_serialization_with_complex():
     assert result == {"real": 10.0, "imag": 5.0}
 
 
+def test_psy_serialization_with_from_to_special_fields():
+    """Test serialization of FromTo_ToFrom with special and default field handling."""
+    values = FromTo_ToFrom(from_to=1.5, to_from=-2.5)
+
+    assert serialize_value(values, "b") == {"from": 1.5, "to": -2.5}
+    assert serialize_value(values, "x") == {"from_to": 1.5, "to_from": -2.5}
+
+
+def test_psy_serialization_with_xycoords():
+    """Test PSY serialization for XYCoords values."""
+    xy = XYCoords(x=3.0, y=4.0)
+    result = serialize_value(xy, "xy")
+    assert result == {"x": 3.0, "y": 4.0}
+
+
 def test_psy_serialization_with_operational_cost():
     """Test PSY serialization with operational cost objects."""
     cost = ThermalGenerationCost(
@@ -211,6 +229,20 @@ def test_serialize_nested_component():
     assert isinstance(result, dict)
     assert "value" in result
     assert result["value"] == str(component.uuid)
+
+
+def test_serialize_arc_component_remaps_aliases():
+    """Test Arc serialization remaps from_to/to_from keys to from/to aliases."""
+    from_bus = ACBus(name="from_bus", number=101)
+    to_bus = ACBus(name="to_bus", number=102)
+    arc = Arc(name="arc_1", **{"from": from_bus, "to": to_bus})
+
+    serialized = serialize_component_to_psy(arc)
+    assert serialized is not None
+    assert "from" in serialized
+    assert "to" in serialized
+    assert "from_to" not in serialized
+    assert "to_from" not in serialized
 
 
 def test_sienna_config_creation():
