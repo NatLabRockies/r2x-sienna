@@ -48,6 +48,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
+      id-token: write
     environment: codecov
     strategy:
       fail-fast: false
@@ -81,8 +82,8 @@ jobs:
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@1af58845a975a7985b0beb0cbe6fbbb71a41dbad # v5.5.3
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: NREL-Sienna/r2x-sienna
+          use_oidc: true
+          slug: NatLabRockies/r2x-sienna
 
   package:
     name: Package smoke test
