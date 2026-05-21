@@ -1,13 +1,18 @@
 import json
+from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from r2x_core import DataStore, PluginContext
+from rust_ok import Err, Ok
 
 from r2x_sienna import (
     SiennaConfig,
     SiennaExporter,
     SiennaParser,
 )
+import r2x_sienna.exporter as exporter_mod
 from r2x_sienna.models import (
     ACBus,
     MinMax,
@@ -582,3 +587,124 @@ def test_pjm_time_series_files_exist(data_folder):
 
     assert json_file.exists(), f"PJM JSON file not found: {json_file}"
     assert h5_file.exists(), f"PJM H5 file not found: {h5_file}"
+
+
+def test_iter_supplemental_attributes_fallback_and_empty():
+    class WithMethod:
+        def iter_supplemental_attributes(self):
+            return [1, 2]
+
+    class Empty:
+        pass
+
+    assert list(exporter_mod.iter_supplemental_attributes(WithMethod())) == [1, 2]
+    assert tuple(exporter_mod.iter_supplemental_attributes(Empty())) == ()
+
+
+def test_serialize_supplemental_attributes_skips_unsupported_type():
+    class UnsupportedAttr:
+        def __init__(self):
+            self.uuid = uuid4()
+
+    class Component:
+        def __init__(self):
+            self.uuid = uuid4()
+
+    attr = UnsupportedAttr()
+    component = Component()
+
+    class ComponentMgr:
+        def iter_all(self):
+            return [component]
+
+    class FakeSystem:
+        _component_mgr = ComponentMgr()
+
+        @staticmethod
+        def iter_supplemental_attributes():
+            return [attr]
+
+        @staticmethod
+        def has_supplemental_attribute(_component):
+            return True
+
+        @staticmethod
+        def get_supplemental_attributes_with_component(_component):
+            return [attr]
+
+    assert exporter_mod.serialize_single_supplemental_attribute(attr) is None
+    result = exporter_mod.serialize_supplemental_attributes(FakeSystem())
+    assert result == {"attributes": [], "associations": []}
+
+
+def test_exporter_on_validate_returns_err_when_mkdir_fails(simple_test_system, tmp_path, monkeypatch):
+    cfg = SiennaConfig(output_path=str(tmp_path / "nested" / "out.json"), model_year=2010)
+    ctx = PluginContext(config=cfg, system=simple_test_system, store=DataStore(path=tmp_path))
+    exporter = SiennaExporter.from_context(ctx)
+
+    def _raise_mkdir(self, parents=False, exist_ok=False):
+        raise OSError("mkdir failed")
+
+    monkeypatch.setattr(Path, "mkdir", _raise_mkdir)
+    result = exporter.on_validate()
+    assert result.is_err()
+    assert "Failed to create output directory" in str(result.err())
+
+
+def test_exporter_on_export_returns_err_when_component_serialization_raises(
+    simple_test_system, tmp_path, monkeypatch
+):
+    cfg = SiennaConfig(output_path=str(tmp_path / "out.json"), model_year=2010)
+    ctx = PluginContext(config=cfg, system=simple_test_system, store=DataStore(path=tmp_path))
+    exporter = SiennaExporter.from_context(ctx)
+    exporter.should_export_time_series = False
+    exporter.system_data = {"data_information": {}, "system_information": {}}
+
+    def _boom(_component):
+        raise RuntimeError("serialize boom")
+
+    monkeypatch.setattr(exporter_mod, "serialize_component_to_psy", _boom)
+    result = exporter.on_export()
+    assert result.is_err()
+    assert "Export failed" in str(result.err())
+
+
+def test_normalize_time_series_metadata_raises_on_upgrade_error(simple_test_system, tmp_path, monkeypatch):
+    cfg = SiennaConfig(output_path=str(tmp_path / "out.json"), model_year=2010)
+    ctx = PluginContext(config=cfg, system=simple_test_system, store=DataStore(path=tmp_path))
+    exporter = SiennaExporter.from_context(ctx)
+
+    import r2x_sienna.upgrader.data_upgrader as du
+
+    monkeypatch.setattr(du, "_upgrade_h5_time_series_metadata", lambda _path: Err("bad metadata"))
+    with pytest.raises(RuntimeError, match="bad metadata"):
+        exporter._normalize_time_series_metadata(tmp_path / "dummy.h5")
+
+
+def test_patch_time_series_owner_types_no_metadata_dataset(simple_test_system, tmp_path):
+    import h5py
+
+    cfg = SiennaConfig(output_path=str(tmp_path / "out.json"), model_year=2010)
+    ctx = PluginContext(config=cfg, system=simple_test_system, store=DataStore(path=tmp_path))
+    exporter = SiennaExporter.from_context(ctx)
+
+    h5_path = tmp_path / "no_meta.h5"
+    with h5py.File(h5_path, "w") as f:
+        f.create_dataset("not_time_series_metadata", data=[1, 2, 3])
+
+    exporter._patch_time_series_owner_types(h5_path)
+
+
+def test_to_psy_raises_on_validate_and_export_errors(simple_test_system, tmp_path, monkeypatch):
+    output_file = tmp_path / "legacy.json"
+    config = SimpleNamespace(system_base_power=100.0, scenario="base")
+    system_data = {"data_information": {}, "system_information": {}}
+
+    monkeypatch.setattr(SiennaExporter, "on_validate", lambda self: Err("validation failed"))
+    with pytest.raises(Exception, match="Validation failed"):
+        exporter_mod.to_psy(config, simple_test_system, system_data, str(output_file))
+
+    monkeypatch.setattr(SiennaExporter, "on_validate", lambda self: Ok(None))
+    monkeypatch.setattr(SiennaExporter, "on_export", lambda self: Err("export failed"))
+    with pytest.raises(Exception, match="Export failed"):
+        exporter_mod.to_psy(config, simple_test_system, system_data, str(output_file))

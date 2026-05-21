@@ -88,7 +88,7 @@ class ThermalGenerationCost(OperationalCost):
     References
     ----------
     .. [1] National Renewable Energy Laboratory. "Thermal Generation Cost Model Library."
-       Available: https://nrel-sienna.github.io/PowerSystems.jl/stable/model_library/thermal_generation_cost/
+       Available: https://github.com/Sienna-Platform/PowerSystems.jl/blob/main/docs/src/model_library/thermal_generation_cost.md
     """
 
     fixed: Annotated[NonNegativeFloat, Field(description="Cost of using fuel in $ or $/hr.")] = 0.0
