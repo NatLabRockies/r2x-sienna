@@ -4,8 +4,8 @@
 
 **Sienna PSY parser/exporter plugin for the `r2x-core` plugin framework.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/NREL-Sienna/r2x-sienna/ci.yaml?branch=main&label=CI)](https://github.com/NREL-Sienna/r2x-sienna/actions/workflows/ci.yaml)
-[![Actions Quality](https://img.shields.io/github/actions/workflow/status/NREL-Sienna/r2x-sienna/workflow-quality.yaml?branch=main&label=actions-quality)](https://github.com/NREL-Sienna/r2x-sienna/actions/workflows/workflow-quality.yaml)
+[![CI](https://img.shields.io/github/actions/workflow/status/NatLabRockies/r2x-sienna/ci.yaml?branch=main&label=CI)](https://github.com/NatLabRockies/r2x-sienna/actions/workflows/ci.yaml)
+[![Actions Quality](https://img.shields.io/github/actions/workflow/status/NatLabRockies/r2x-sienna/workflow-quality.yaml?branch=main&label=actions-quality)](https://github.com/NatLabRockies/r2x-sienna/actions/workflows/workflow-quality.yaml)
 [![Python](https://img.shields.io/badge/python-3.11%20to%203.13-blue)](https://pypi.org/project/r2x-sienna/)
 [![PyPI](https://img.shields.io/pypi/v/r2x-sienna)](https://pypi.org/project/r2x-sienna/)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-green)](./LICENSE.txt)
@@ -89,7 +89,7 @@ uv add r2x-sienna
 ### From Source
 
 ```bash
-git clone https://github.com/NREL-Sienna/r2x-sienna.git
+git clone https://github.com/NatLabRockies/r2x-sienna.git
 cd r2x-sienna
 uv sync --all-groups
 ```

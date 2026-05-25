@@ -12,7 +12,7 @@ from r2x_sienna.upgrader.upgrade_steps import (
 
 from types import SimpleNamespace
 
-from rust_ok import Ok
+from rust_ok import Err, Ok
 
 import r2x_sienna.plugins as plugins
 import r2x_sienna.upgrader.data_upgrader as data_upgrader
@@ -383,3 +383,107 @@ def test_version_detector_and_run_sienna_upgrades_paths(tmp_path: Path, monkeypa
     monkeypatch.setattr(data_upgrader, "_resolve_json_path", lambda path: None)
     result_ok = run_sienna_upgrades(json_path=tmp_path, ctx=SimpleNamespace())
     assert result_ok.is_ok()
+
+
+def test_upgrader_upgrade_error_paths(tmp_path: Path, monkeypatch) -> None:
+    upgrader = SiennaUpgrader(tmp_path)
+
+    # current_version autodetection fails
+    monkeypatch.setattr(upgrader.version_reader, "read_version", lambda _path: None)
+    result = upgrader.upgrade(current_version=None)
+    assert result.is_err()
+    assert "Could not determine Sienna version" in str(result.err())
+
+    # SYSTEM upgrade with no JSON files in directory
+    empty_dir = tmp_path / "empty_system_dir"
+    empty_dir.mkdir()
+    empty_upgrader = SiennaUpgrader(empty_dir)
+    result = empty_upgrader.upgrade(current_version="1.0.0", upgrade_type=UpgradeType.SYSTEM)
+    assert result.is_err()
+    assert "No JSON file found" in str(result.err())
+
+    # SYSTEM upgrade with invalid JSON file
+    bad_json = tmp_path / "bad_system.json"
+    bad_json.write_text("{invalid", encoding="utf-8")
+    bad_upgrader = SiennaUpgrader(bad_json)
+    result = bad_upgrader.upgrade(current_version="1.0.0", upgrade_type=UpgradeType.SYSTEM)
+    assert result.is_err()
+    assert "Failed to load JSON" in str(result.err())
+
+
+def test_upgrader_upgrade_step_failure_and_file_mode_error(tmp_path: Path, monkeypatch) -> None:
+    system_json = tmp_path / "system.json"
+    system_json.write_text(json.dumps({"data": {"components": []}}), encoding="utf-8")
+
+    def broken_upgrade(_data: dict[str, Any]) -> dict[str, Any]:
+        raise RuntimeError("step failed")
+
+    failing_system_step = UpgradeStep(
+        name="broken_upgrade",
+        func=broken_upgrade,
+        target_version="2.0.0",
+        upgrade_type=UpgradeType.SYSTEM,
+    )
+    upgrader = SiennaUpgrader(system_json, steps=[failing_system_step])
+    result = upgrader.upgrade(current_version="1.0.0", upgrade_type=UpgradeType.SYSTEM)
+    assert result.is_err()
+    assert "Failed broken_upgrade" in str(result.err())
+
+    file_step = UpgradeStep(
+        name="file_step",
+        func=lambda path: path,
+        target_version="2.0.0",
+        upgrade_type=UpgradeType.FILE,
+    )
+    file_upgrader = SiennaUpgrader(system_json, steps=[file_step])
+    monkeypatch.setattr(data_upgrader, "run_upgrade_step", lambda path, step: Err("file step failed"))
+    result = file_upgrader.upgrade(current_version="1.0.0", upgrade_type=UpgradeType.FILE)
+    assert result.is_err()
+    assert "file step failed" in str(result.err())
+
+
+def test_run_sienna_upgrades_store_and_h5_error_paths(tmp_path: Path, monkeypatch) -> None:
+    system_json = tmp_path / "sys.json"
+    system_json.write_text(
+        json.dumps({"data_format_version": "5.0.0", "data": {"time_series_storage_file": "ts.h5"}}),
+        encoding="utf-8",
+    )
+    h5_path = tmp_path / "ts.h5"
+    h5_path.write_bytes(b"dummy")
+
+    class Store:
+        folder = tmp_path
+
+    # Cover store.folder branch and "could not detect version" skip.
+    monkeypatch.setattr(data_upgrader.SiennaUpgrader.version_reader, "read_version", lambda path: None)
+    monkeypatch.setattr(data_upgrader, "_resolve_json_path", lambda path: None)
+    result_skip = run_sienna_upgrades(store=Store(), ctx=SimpleNamespace())
+    assert result_skip.is_ok()
+
+    # Cover upgrade result error branch.
+    monkeypatch.setattr(data_upgrader.SiennaUpgrader.version_reader, "read_version", lambda path: "5.0.0")
+    monkeypatch.setattr(data_upgrader.SiennaUpgrader, "upgrade", lambda self, **kwargs: Err("upgrade failed"))
+    result_upgrade_err = run_sienna_upgrades(store=Store(), ctx=SimpleNamespace())
+    assert result_upgrade_err.is_err()
+    assert "upgrade failed" in str(result_upgrade_err.err())
+
+    # Cover JSON/H5 inspection error branch.
+    monkeypatch.setattr(data_upgrader.SiennaUpgrader, "upgrade", lambda self, **kwargs: Ok(self.path))
+    monkeypatch.setattr(data_upgrader, "_resolve_json_path", lambda path: system_json)
+    monkeypatch.setattr(
+        data_upgrader,
+        "_resolve_time_series_h5_path",
+        lambda path: (_ for _ in ()).throw(RuntimeError("inspect failed")),
+    )
+    result_inspect_err = run_sienna_upgrades(store=Store(), ctx=SimpleNamespace())
+    assert result_inspect_err.is_err()
+    assert "Failed to inspect JSON" in str(result_inspect_err.err())
+
+    # Cover H5 upgrade error branch.
+    monkeypatch.setattr(data_upgrader, "_resolve_time_series_h5_path", lambda path: h5_path)
+    monkeypatch.setattr(
+        data_upgrader, "_upgrade_h5_time_series_metadata", lambda path: Err("h5 upgrade failed")
+    )
+    result_h5_err = run_sienna_upgrades(store=Store(), ctx=SimpleNamespace())
+    assert result_h5_err.is_err()
+    assert "h5 upgrade failed" in str(result_h5_err.err())
