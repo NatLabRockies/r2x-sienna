@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0](https://github.com/NatLabRockies/r2x-sienna/compare/v0.2.1...v0.3.0) (2026-05-25)
+
+
+### Features
+
+* add scaling factor multiplier handler for psy4/5 time series up… ([#43](https://github.com/NatLabRockies/r2x-sienna/issues/43)) ([2c1ceb6](https://github.com/NatLabRockies/r2x-sienna/commit/2c1ceb6ed4a710d33fa8c0f74d1ede70fa0085b8))
+* add source component to sienna gen models ([#42](https://github.com/NatLabRockies/r2x-sienna/issues/42)) ([ef95329](https://github.com/NatLabRockies/r2x-sienna/commit/ef953295f28f9a96435e6012dd1fbc1c51211da3))
+* implement documentation for models, units and configurations ([#8](https://github.com/NatLabRockies/r2x-sienna/issues/8)) ([e407c35](https://github.com/NatLabRockies/r2x-sienna/commit/e407c35106d5da5a7d73b01cac722928ca588c45))
+
+
+### Bug Fixes
+
+* fix test on initial geographic info logic ([b21a8eb](https://github.com/NatLabRockies/r2x-sienna/commit/b21a8eb822252386b3dda8a055e52eeedd57f2e4))
+* run formatter ([2147bd9](https://github.com/NatLabRockies/r2x-sienna/commit/2147bd9d491391ab7366d77a59f4d8542d49448e))
+* update the data upgrader to handle psy4 diff format ([bbb696c](https://github.com/NatLabRockies/r2x-sienna/commit/bbb696ccedf8288fee837499227abed425eb21d2))
+* update the data upgrader to handle psy4 diff format ([4aa4e57](https://github.com/NatLabRockies/r2x-sienna/commit/4aa4e579c9e200ea2884b04ca8fc2c5f3faa327c))
+
 ## [0.2.1](https://github.com/NatLabRockies/r2x-sienna/compare/v0.2.0...v0.2.1) (2026-04-06)
 
 
