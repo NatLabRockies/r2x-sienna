@@ -27,7 +27,10 @@
 
 ## Load and FACTS-adjacent Load Models
 
-- `PowerLoad`, `StandardLoad`, `InterruptiblePowerLoad`
+- `PowerLoad`, `StandardLoad`, `InterruptiblePowerLoad`, `InterruptibleStandardLoad`
+- `ShiftablePowerLoad`
+- `MotorLoad`, `ExponentialLoad`
+- `ActiveConstantPowerLoad`
 - `FixedAdmittance`, `SwitchedAdmittance`, `FACTSControlDevice`
 
 ## Services and Core Mappings

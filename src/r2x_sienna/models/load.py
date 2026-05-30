@@ -4,9 +4,9 @@ from typing import Annotated
 
 from pydantic import Field, NonNegativeFloat
 
-from r2x_sienna.models.costs import LoadCost
-from r2x_sienna.models.core import StaticInjection
-from r2x_sienna.models.enums import FACTSOperationModes, LoadConformity
+from r2x_sienna.models.costs import LoadCost, MarketBidCost
+from r2x_sienna.models.core import StaticInjection, DynamicInjection
+from r2x_sienna.models.enums import FACTSOperationModes, LoadConformity, MotorLoadTechnology
 from r2x_sienna.models.named_tuples import Complex, MinMax
 from r2x_sienna.models.topology import ACBus, Bus
 from r2x_sienna.units import ActivePower, ApparentPower
@@ -159,6 +159,177 @@ class InterruptiblePowerLoad(ControllableLoad):
     comformity: LoadConformity = LoadConformity.UNDEFINED
 
 
+class InterruptibleStandardLoad(ControllableLoad):
+    """A voltage-dependent ZIP interruptible load (Z=impedance, I=current, P=power)."""
+
+    base_power: Annotated[
+        ApparentPower,
+        Field(gt=0, description="Base power of the load (MVA) for per unitization."),
+    ]
+    operation_cost: LoadCost | MarketBidCost | None = None
+    conformity: LoadConformity = LoadConformity.UNDEFINED
+    constant_active_power: Annotated[
+        float, Field(default=0.0, description="Constant active power demand in MW (P_P).")
+    ] = 0.0
+    constant_reactive_power: Annotated[
+        float, Field(default=0.0, description="Constant reactive power demand in MVAR (Q_P).")
+    ] = 0.0
+    impedance_active_power: Annotated[
+        float,
+        Field(default=0.0, description="Active power coefficient in MW for constant impedance load (P_Z)."),
+    ] = 0.0
+    impedance_reactive_power: Annotated[
+        float,
+        Field(
+            default=0.0, description="Reactive power coefficient in MVAR for constant impedance load (Q_Z)."
+        ),
+    ] = 0.0
+    current_active_power: Annotated[
+        float,
+        Field(default=0.0, description="Active power coefficient in MW for constant current load (P_I)."),
+    ] = 0.0
+    current_reactive_power: Annotated[
+        float,
+        Field(default=0.0, description="Reactive power coefficient in MVAR for constant current load (Q_I)."),
+    ] = 0.0
+    max_constant_active_power: Annotated[
+        float, Field(default=0.0, description="Maximum active power (MW) drawn by constant power load.")
+    ] = 0.0
+    max_constant_reactive_power: Annotated[
+        float, Field(default=0.0, description="Maximum reactive power (MVAR) drawn by constant power load.")
+    ] = 0.0
+    max_impedance_active_power: Annotated[
+        float, Field(default=0.0, description="Maximum active power (MW) drawn by constant impedance load.")
+    ] = 0.0
+    max_impedance_reactive_power: Annotated[
+        float,
+        Field(default=0.0, description="Maximum reactive power (MVAR) drawn by constant impedance load."),
+    ] = 0.0
+    max_current_active_power: Annotated[
+        float, Field(default=0.0, description="Maximum active power (MW) drawn by constant current load.")
+    ] = 0.0
+    max_current_reactive_power: Annotated[
+        float, Field(default=0.0, description="Maximum reactive power (MVAR) drawn by constant current load.")
+    ] = 0.0
+
+
+class ShiftablePowerLoad(ControllableLoad):
+    """A static power load that can be partially or fully shifted to later time periods."""
+
+    active_power: Annotated[
+        ActivePower,
+        Field(description="Initial steady state active power demand (MW)."),
+    ]
+    active_power_limits: Annotated[
+        MinMax,
+        Field(description="Minimum and maximum stable active power levels (MW)."),
+    ]
+    reactive_power: Annotated[
+        float,
+        Field(description="Initial steady state reactive power demand (MVAR)."),
+    ]
+    max_active_power: Annotated[
+        ActivePower,
+        Field(description="Maximum active power (MW) that this load can demand."),
+    ]
+    max_reactive_power: Annotated[
+        float,
+        Field(description="Maximum reactive power (MVAR) that this load can demand."),
+    ]
+    base_power: Annotated[
+        ApparentPower,
+        Field(gt=0, description="Base power (MVA) for per unitization."),
+    ]
+    load_balance_time_horizon: Annotated[
+        int,
+        Field(ge=1, description="Number of time periods over which load must be balanced."),
+    ]
+    operation_cost: LoadCost | MarketBidCost | None = None
+
+
+class MotorLoad(StaticLoad):
+    """A static motor load."""
+
+    active_power: Annotated[
+        ActivePower,
+        Field(
+            description="Initial steady-state active power demand (MW). A positive value indicates power consumption."
+        ),
+    ]
+    reactive_power: Annotated[
+        float,
+        Field(
+            description="Initial steady-state reactive power demand (MVAR). A positive value indicates reactive power consumption."
+        ),
+    ]
+    base_power: Annotated[
+        ApparentPower,
+        Field(gt=0, description="Base power (MVA) for per unitization."),
+    ]
+    rating: Annotated[
+        float,
+        Field(
+            ge=0,
+            description="Maximum AC side output power rating of the unit. Stored in per unit of the device.",
+        ),
+    ]
+    max_active_power: Annotated[
+        ActivePower,
+        Field(description="Maximum active power (MW) that this load can demand."),
+    ]
+    reactive_power_limits: MinMax | None = None
+    motor_technology: MotorLoadTechnology = MotorLoadTechnology.UNDETERMINED
+
+
+class ExponentialLoad(StaticLoad):
+    """A voltage-dependent exponential load.
+
+    Models active power as P = P0 * V^α and reactive power as Q = Q0 * V^β.
+    """
+
+    active_power: Annotated[
+        ActivePower,
+        Field(description="Active power coefficient, P0 (MW)."),
+    ]
+    reactive_power: Annotated[
+        float,
+        Field(description="Reactive power coefficient, Q0 (MVAR)."),
+    ]
+    α: Annotated[
+        float,
+        Field(
+            ge=0,
+            description=(
+                "Exponent relating voltage dependency for active power. "
+                "0 = constant power only, 1 = constant current only, 2 = constant impedance only."
+            ),
+        ),
+    ]
+    β: Annotated[
+        float,
+        Field(
+            ge=0,
+            description=(
+                "Exponent relating voltage dependency for reactive power. "
+                "0 = constant power only, 1 = constant current only, 2 = constant impedance only."
+            ),
+        ),
+    ]
+    base_power: Annotated[
+        ApparentPower,
+        Field(gt=0, description="Base power (MVA) for per unitization."),
+    ]
+    max_active_power: Annotated[
+        ActivePower,
+        Field(description="Maximum active power (MW) that this load can demand."),
+    ]
+    max_reactive_power: Annotated[
+        float,
+        Field(description="Maximum reactive power (MVAR) that this load can demand."),
+    ]
+    conformity: LoadConformity = LoadConformity.UNDEFINED
+
+
 class FixedAdmittance(ElectricLoad):
     """A fixed admittance."""
 
@@ -234,3 +405,32 @@ class SwitchedAdmittance(ElectricLoad):
             ],
             admittance_limits=MinMax(min=0.0, max=0.2),
         )
+
+
+class ActiveConstantPowerLoad(DynamicInjection):
+    """Parameters of a 12-state active power load for dynamics modeling.
+
+    Based on: 'Dynamic Stability of a Microgrid With an Active Load.'
+    https://doi.org/10.1109/TPEL.2013.2241455
+    """
+
+    r_load: Annotated[float, Field(gt=0, description="DC-side resistor.")]
+    c_dc: Annotated[float, Field(gt=0, description="DC-side capacitor.")]
+    rf: Annotated[float, Field(gt=0, description="Converter side filter resistance.")]
+    lf: Annotated[float, Field(gt=0, description="Converter side filter inductance.")]
+    cf: Annotated[float, Field(gt=0, description="AC Converter filter capacitance.")]
+    rg: Annotated[float, Field(gt=0, description="Network side filter resistance.")]
+    lg: Annotated[float, Field(gt=0, description="Network side filter inductance.")]
+    kp_pll: Annotated[float, Field(gt=0, description="Proportional constant for PI-PLL block.")]
+    ki_pll: Annotated[float, Field(gt=0, description="Integral constant for PI-PLL block.")]
+    kpv: Annotated[float, Field(gt=0, description="Proportional constant for Voltage Control block.")]
+    kiv: Annotated[float, Field(gt=0, description="Integral constant for Voltage Control block.")]
+    kpc: Annotated[float, Field(gt=0, description="Proportional constant for Current Control block.")]
+    kic: Annotated[float, Field(gt=0, description="Integral constant for Current Control block.")]
+    P_ref: Annotated[float, Field(description="Reference active power (pu).")] = 1.0
+    Q_ref: Annotated[float, Field(description="Reference reactive power (pu).")] = 1.0
+    V_ref: Annotated[float, Field(description="Reference voltage (pu).")] = 1.0
+    ω_ref: Annotated[float, Field(description="Reference frequency (pu).")] = 1.0
+    is_filter_differential: Annotated[
+        int, Field(description="Boolean to decide if filter states are differential or algebraic.")
+    ] = 1

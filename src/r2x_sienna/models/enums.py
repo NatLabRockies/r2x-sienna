@@ -198,6 +198,14 @@ class WindingCategory(StrEnum):
     TR2W_WINDING = "TR2W_WINDING"  # 0
     PRIMARY_WINDING = "PRIMARY_WINDING"  # 1
     SECONDARY_WINDING = "SECONDARY_WINDING"  # 2
+
+
+class MotorLoadTechnology(StrEnum):
+    """AC motor load technology types."""
+
+    UNDETERMINED = "UNDETERMINED"
+    SINGLE_PHASE = "SINGLE_PHASE"
+    THREE_PHASE = "THREE_PHASE"
     TERTIARY_WINDING = "TERTIARY_WINDING"  # 3
 
 
