@@ -201,6 +201,14 @@ class WindingCategory(StrEnum):
     TERTIARY_WINDING = "TERTIARY_WINDING"  # 3
 
 
+class MotorLoadTechnology(StrEnum):
+    """AC motor load technology types."""
+
+    INDUCTION = "INDUCTION"  # 1
+    SYNCHRONOUS = "SYNCHRONOUS"  # 2
+    UNDETERMINED = "UNDETERMINED"  # 3
+
+
 class PumpHydroStatus(StrEnum):
     """Pump hydro unit status."""
 
@@ -229,3 +237,43 @@ class HydroTurbineType(str, Enum):
     DERIAZ = "DERIAZ"  # Diagonal flow turbine
     PROPELLER = "PROPELLER"  # Simple propeller turbine
     OTHER = "OTHER"  # Catch-all for less common designs
+
+
+class PollutantType(StrEnum):
+    """Pollutant types for emissions tracking."""
+
+    CO2 = "CO2"
+    CO2E = "CO2E"
+    CH4 = "CH4"
+    N2O = "N2O"
+    NOX = "NOX"
+    SO2 = "SO2"
+    PM25 = "PM25"
+    PM10 = "PM10"
+    HG = "HG"
+    HAP = "HAP"
+    CUSTOM = "CUSTOM"
+
+
+class EmissionBasis(StrEnum):
+    """Basis for emission rate denominator."""
+
+    FUEL_INPUT = "FUEL_INPUT"
+    POWER_OUTPUT = "POWER_OUTPUT"
+
+
+class MassUnit(StrEnum):
+    """Mass units for emission quantities."""
+
+    KG = "KG"
+    LB = "LB"
+    SHORT_TON = "SHORT_TON"
+    METRIC_TON = "METRIC_TON"
+
+
+class EnergyUnit(StrEnum):
+    """Energy units for emission rate denominators."""
+
+    MMBTU = "MMBTU"
+    GJ = "GJ"
+    MWH = "MWH"

@@ -37,14 +37,24 @@ def iter_supplemental_attributes(system: Any) -> Iterable[Any]:
 
 def build_attr_to_components_map(system: Any) -> dict[Any, list[Any]]:
     """Build a reverse map from attribute uuid to list of associated components."""
+    import sqlite3
+
     attr_to_components: dict[Any, list[Any]] = {}
-    for component in system._component_mgr.iter_all():
-        if not system.has_supplemental_attribute(component):
-            continue
-        for attr in system.get_supplemental_attributes_with_component(component):
-            attr_uuid = getattr(attr, "uuid", None)
-            if attr_uuid is not None:
-                attr_to_components.setdefault(attr_uuid, []).append(component)
+    try:
+        for component in system._component_mgr.iter_all():
+            if not system.has_supplemental_attribute(component):
+                continue
+            for attr in system.get_supplemental_attributes_with_component(component):
+                attr_uuid = getattr(attr, "uuid", None)
+                if attr_uuid is not None:
+                    attr_to_components.setdefault(attr_uuid, []).append(component)
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e):
+            logger.warning(
+                "Supplemental attribute associations table not found ({}); associations will be empty", e
+            )
+        else:
+            raise
     return attr_to_components
 
 
@@ -301,6 +311,9 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
             logger.debug("Serializing time series to {}", full_storage_path)
             self.system._time_series_mgr.serialize({}, full_storage_path, db_name=self.system.DB_FILENAME)
 
+            # Inject compression metadata attributes expected by InfrastructureSystems.jl
+            self._patch_compression_attributes(full_storage_path)
+
             # Patch the embedded SQLite metadata to rename legacy component types
             self._patch_time_series_owner_types(full_storage_path)
             # Normalize embedded metadata tables/references so Julia IS migrations can load safely.
@@ -384,6 +397,35 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
                 updated,
                 patched_metadata,
             )
+
+    def _patch_compression_attributes(self, h5_path: Path) -> None:
+        """Write compression-settings attributes to the ``time_series`` group.
+
+        InfrastructureSystems.jl reads these five attributes from the group in
+        ``_deserialize_compression_settings!``.  The Python infrasys library does not
+        write them, so they must be injected after serialization.
+        """
+        import h5py
+        import numpy as np
+
+        TS_GROUP = "time_series"
+        ATTRS: dict[str, object] = {
+            "compression_enabled": np.uint8(0),
+            "compression_level": np.int64(3),
+            "compression_shuffle": np.uint8(1),
+            "compression_type": np.bytes_(b"DEFLATE"),
+            "data_format_version": np.bytes_(b"2.0.0"),
+        }
+
+        with h5py.File(h5_path, "a") as h5f:
+            if TS_GROUP not in h5f:
+                logger.warning("HDF5 file has no '{}' group; skipping compression attribute patch", TS_GROUP)
+                return
+            grp = h5f[TS_GROUP]
+            for key, value in ATTRS.items():
+                if key not in grp.attrs:
+                    grp.attrs[key] = value
+        logger.debug("Patched compression attributes on '{}'", TS_GROUP)
 
     def _patch_time_series_owner_types(self, h5_path: Path) -> None:
         """Post-process the HDF5 to rename legacy owner_type values in the embedded SQLite metadata."""

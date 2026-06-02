@@ -31,6 +31,12 @@ class StaticInjection(Device):
     """Supertype for all static injection devices."""
 
 
+class DynamicInjection(SiennaComponent):
+    """Supertype for all dynamic injection devices."""
+
+    base_power: float
+
+
 class TransmissionInterfaceMap(SiennaComponent):
     mapping: defaultdict[str, list] = defaultdict(list)  # noqa: RUF012
 

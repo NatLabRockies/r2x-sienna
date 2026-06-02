@@ -1,4 +1,9 @@
-from .attributes import GeographicInfo, GeometricDistributionForcedOutage, ImpedanceCorrectionData
+from .attributes import (
+    EmissionsData,
+    GeographicInfo,
+    GeometricDistributionForcedOutage,
+    ImpedanceCorrectionData,
+)
 from .branch import (
     ACBranch,
     AreaInterchange,
@@ -33,9 +38,13 @@ from .enums import (
     ACBusTypes,
     DiscreteControlledBranchStatus,
     DiscreteControlledBranchType,
+    EmissionBasis,
+    EnergyUnit,
     FACTSOperationModes,
     HydroTurbineType,
     ImpedanceCorrectionTransformerControlMode,
+    MassUnit,
+    PollutantType,
     PrimeMoversType,
     PumpHydroStatus,
     ReserveDirection,
@@ -69,10 +78,15 @@ from .generators import (
     ThermalStandard,
 )
 from .load import (
+    ActiveConstantPowerLoad,
+    ExponentialLoad,
     FACTSControlDevice,
     FixedAdmittance,
     InterruptiblePowerLoad,
+    InterruptibleStandardLoad,
+    MotorLoad,
     PowerLoad,
+    ShiftablePowerLoad,
     StandardLoad,
     SwitchedAdmittance,
 )
@@ -94,6 +108,10 @@ __all__ = [
     # enums
     "DiscreteControlledBranchStatus",
     "DiscreteControlledBranchType",
+    "EmissionBasis",
+    "EnergyUnit",
+    "MassUnit",
+    "PollutantType",
     "TransformerControlObjective",
     "FACTSOperationModes",
     "WindingGroupNumber",
@@ -107,6 +125,7 @@ __all__ = [
     "ThermalFuels",
     "ACBusTypes",
     # attributes
+    "EmissionsData",
     "GeographicInfo",
     "ImpedanceCorrectionData",
     "GeometricDistributionForcedOutage",
@@ -165,6 +184,11 @@ __all__ = [
     "HydroPumpTurbine",
     # load
     "FixedAdmittance",
+    "MotorLoad",
+    "ShiftablePowerLoad",
+    "ActiveConstantPowerLoad",
+    "ExponentialLoad",
+    "InterruptibleStandardLoad",
     "SwitchedAdmittance",
     "InterruptiblePowerLoad",
     "FACTSControlDevice",

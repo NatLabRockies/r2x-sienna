@@ -27,7 +27,10 @@
 
 ## Load and FACTS-adjacent Load Models
 
-- `PowerLoad`, `StandardLoad`, `InterruptiblePowerLoad`
+- `PowerLoad`, `StandardLoad`, `InterruptiblePowerLoad`, `InterruptibleStandardLoad`
+- `ShiftablePowerLoad`
+- `MotorLoad`, `ExponentialLoad`
+- `ActiveConstantPowerLoad`
 - `FixedAdmittance`, `SwitchedAdmittance`, `FACTSControlDevice`
 
 ## Services and Core Mappings
@@ -49,6 +52,19 @@
 - `GeographicInfo`
 - `GeometricDistributionForcedOutage`
 - `ImpedanceCorrectionData`
+- `EmissionsData` — emission rate (as a [`ValueCurve`](api.md)) for a single pollutant;
+  attach to any component via `add_supplemental_attribute`. Supports `FUEL_INPUT` or
+  `POWER_OUTPUT` basis with validated `energy_unit` pairing. Scalar `float` rates are
+  automatically wrapped in a constant-rate `LinearCurve`.
+
+## Emissions Enums
+
+| Enum | Members |
+|------|---------|
+| `PollutantType` | `CO2`, `CO2E`, `CH4`, `N2O`, `NOX`, `SO2`, `PM25`, `PM10`, `HG`, `HAP`, `CUSTOM` |
+| `EmissionBasis` | `FUEL_INPUT`, `POWER_OUTPUT` |
+| `MassUnit` | `KG`, `LB`, `SHORT_TON`, `METRIC_TON` |
+| `EnergyUnit` | `MMBTU`, `GJ`, `MWH` |
 
 ## Helper Types and Enums
 
