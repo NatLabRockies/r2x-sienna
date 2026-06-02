@@ -37,14 +37,24 @@ def iter_supplemental_attributes(system: Any) -> Iterable[Any]:
 
 def build_attr_to_components_map(system: Any) -> dict[Any, list[Any]]:
     """Build a reverse map from attribute uuid to list of associated components."""
+    import sqlite3
+
     attr_to_components: dict[Any, list[Any]] = {}
-    for component in system._component_mgr.iter_all():
-        if not system.has_supplemental_attribute(component):
-            continue
-        for attr in system.get_supplemental_attributes_with_component(component):
-            attr_uuid = getattr(attr, "uuid", None)
-            if attr_uuid is not None:
-                attr_to_components.setdefault(attr_uuid, []).append(component)
+    try:
+        for component in system._component_mgr.iter_all():
+            if not system.has_supplemental_attribute(component):
+                continue
+            for attr in system.get_supplemental_attributes_with_component(component):
+                attr_uuid = getattr(attr, "uuid", None)
+                if attr_uuid is not None:
+                    attr_to_components.setdefault(attr_uuid, []).append(component)
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e):
+            logger.warning(
+                "Supplemental attribute associations table not found ({}); associations will be empty", e
+            )
+        else:
+            raise
     return attr_to_components
 
 
