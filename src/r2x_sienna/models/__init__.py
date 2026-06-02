@@ -78,10 +78,15 @@ from .generators import (
     ThermalStandard,
 )
 from .load import (
+    ActiveConstantPowerLoad,
+    ExponentialLoad,
     FACTSControlDevice,
     FixedAdmittance,
     InterruptiblePowerLoad,
+    InterruptibleStandardLoad,
+    MotorLoad,
     PowerLoad,
+    ShiftablePowerLoad,
     StandardLoad,
     SwitchedAdmittance,
 )
@@ -179,6 +184,11 @@ __all__ = [
     "HydroPumpTurbine",
     # load
     "FixedAdmittance",
+    "MotorLoad",
+    "ShiftablePowerLoad",
+    "ActiveConstantPowerLoad",
+    "ExponentialLoad",
+    "InterruptibleStandardLoad",
     "SwitchedAdmittance",
     "InterruptiblePowerLoad",
     "FACTSControlDevice",

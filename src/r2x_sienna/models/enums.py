@@ -198,15 +198,15 @@ class WindingCategory(StrEnum):
     TR2W_WINDING = "TR2W_WINDING"  # 0
     PRIMARY_WINDING = "PRIMARY_WINDING"  # 1
     SECONDARY_WINDING = "SECONDARY_WINDING"  # 2
+    TERTIARY_WINDING = "TERTIARY_WINDING"  # 3
 
 
 class MotorLoadTechnology(StrEnum):
     """AC motor load technology types."""
 
-    UNDETERMINED = "UNDETERMINED"
-    SINGLE_PHASE = "SINGLE_PHASE"
-    THREE_PHASE = "THREE_PHASE"
-    TERTIARY_WINDING = "TERTIARY_WINDING"  # 3
+    INDUCTION = "INDUCTION"  # 1
+    SYNCHRONOUS = "SYNCHRONOUS"  # 2
+    UNDETERMINED = "UNDETERMINED"  # 3
 
 
 class PumpHydroStatus(StrEnum):
