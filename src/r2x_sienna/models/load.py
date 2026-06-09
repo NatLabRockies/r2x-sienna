@@ -2,13 +2,14 @@
 
 from typing import Annotated
 
+from infrasys.value_curves import InputOutputCurve, LinearCurve
 from pydantic import Field, NonNegativeFloat
 
 from r2x_sienna.models.costs import LoadCost, MarketBidCost
-from r2x_sienna.models.core import StaticInjection, DynamicInjection
+from r2x_sienna.models.core import DynamicInjection, Service, StaticInjection
 from r2x_sienna.models.enums import FACTSOperationModes, LoadConformity, MotorLoadTechnology
 from r2x_sienna.models.named_tuples import Complex, MinMax
-from r2x_sienna.models.topology import ACBus, Bus
+from r2x_sienna.models.topology import ACBus, Bus, DCBus
 from r2x_sienna.units import ActivePower, ApparentPower
 
 
@@ -68,6 +69,59 @@ class FACTSControlDevice(StaticInjection):
 
 class StaticLoad(ElectricLoad):
     """Supertype for static loads."""
+
+
+class InterconnectingConverter(StaticInjection):
+    """Converter connecting an AC bus to a DC bus."""
+
+    bus: Annotated[ACBus, Field(description="AC bus connected to the converter.")]
+    dc_bus: Annotated[DCBus, Field(description="DC bus connected to the converter.")]
+    active_power: Annotated[
+        float,
+        Field(description="Initial active power set point of the converter."),
+    ]
+    rating: Annotated[float, Field(ge=0, description="Maximum output power rating of the converter.")]
+    active_power_limits: Annotated[
+        MinMax,
+        Field(description="Minimum and maximum active power limits for the converter."),
+    ]
+    base_power: Annotated[
+        float,
+        Field(gt=0, description="Base power of the converter for per-unitization."),
+    ]
+    reactive_power_limits: Annotated[
+        MinMax | None,
+        Field(description="Minimum and maximum reactive power limits. Set to None if not applicable."),
+    ] = None
+    max_dc_current: Annotated[float, Field(ge=0, description="Maximum stable DC current limit.")]
+    loss_function: Annotated[
+        InputOutputCurve,
+        Field(description="Converter loss model coefficients. PSY accepts linear or quadratic curves."),
+    ] = LinearCurve(0.0)
+    services: Annotated[
+        list[Service],
+        Field(description="Services that this component contributes to."),
+    ] = Field(default_factory=list)
+    dynamic_injector: Annotated[
+        DynamicInjection | None,
+        Field(description="Dynamic injection model attached to this converter."),
+    ] = None
+
+    @classmethod
+    def example(cls) -> "InterconnectingConverter":
+        return InterconnectingConverter(
+            name="InterconnectingConverter_1",
+            available=True,
+            bus=ACBus.example(),
+            dc_bus=DCBus.example(),
+            active_power=0.0,
+            rating=100.0,
+            active_power_limits=MinMax(min=-100.0, max=100.0),
+            base_power=100.0,
+            reactive_power_limits=MinMax(min=-50.0, max=50.0),
+            max_dc_current=1.0,
+            loss_function=LinearCurve(0.0),
+        )
 
 
 class ControllableLoad(ElectricLoad):

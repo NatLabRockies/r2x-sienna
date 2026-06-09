@@ -101,6 +101,64 @@ class VariableReserve(Reserve):
     ] = 1.0
 
 
+class ReserveNonSpinning(Service):
+    """Base class for non-spinning reserve services."""
+
+    time_frame: Annotated[
+        NonNegativeFloat,
+        Field(description="Timeframe in which the reserve is required in seconds."),
+    ] = 0.0
+    requirement: Annotated[
+        NonNegativeFloat,
+        Field(description="Required non-spinning reserve in per unit on system base."),
+    ]
+    sustained_time: Annotated[
+        NonNegativeFloat,
+        Field(description="Time in seconds the reserve contribution must be sustained."),
+    ] = 3600.0
+    max_output_fraction: Annotated[
+        NonNegativeFloat,
+        Field(ge=0.0, le=1.0, description="Maximum output fraction that can provide reserve."),
+    ] = 1.0
+    max_participation_factor: Annotated[
+        NonNegativeFloat,
+        Field(ge=0.0, le=1.0, description="Maximum reserve portion that can be contributed per device."),
+    ] = 1.0
+    deployed_fraction: Annotated[
+        NonNegativeFloat,
+        Field(ge=0.0, le=1.0, description="Fraction of service procurement assumed to be deployed."),
+    ] = 1.0
+
+
+class VariableReserveNonSpinning(ReserveNonSpinning):
+    """Variable non-spinning reserve service."""
+
+
+class ConstantReserveNonSpinning(ReserveNonSpinning):
+    """Constant non-spinning reserve service."""
+
+
+class ReserveDemandCurve(Service):
+    """Reserve demand curve service."""
+
+    time_frame: Annotated[
+        NonNegativeFloat,
+        Field(description="Timeframe in which the reserve is required in seconds."),
+    ] = 0.0
+    sustained_time: Annotated[
+        NonNegativeFloat,
+        Field(description="Time in seconds the reserve contribution must be sustained."),
+    ] = 3600.0
+    max_participation_factor: Annotated[
+        NonNegativeFloat,
+        Field(ge=0.0, le=1.0, description="Maximum reserve portion that can be contributed per device."),
+    ] = 1.0
+    deployed_fraction: Annotated[
+        NonNegativeFloat,
+        Field(ge=0.0, le=1.0, description="Fraction of service procurement assumed to be deployed."),
+    ] = 1.0
+
+
 class TransmissionInterface(Service):
     """Component representing a collection of branches that make up an interface or corridor.
 

@@ -57,6 +57,7 @@ def hydro_energy_reservoir_component():
         "storage_capacity": 100.0,
         "min_storage_capacity": 10.0,
         "storage_target": 80.0,
+        "travel_time": 2.5,
         "ramp_limits": {"up": 5.0, "down": 5.0},
         "time_limits": {"min_up": 1, "min_down": 1},
         "bus": {"value": "bus-id-1"},

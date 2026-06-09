@@ -24,7 +24,6 @@ def hydro_reservoir():
         inflow=0.0,
         outflow=0.0,
         level_targets=0.0,
-        travel_time=0.0,
         level_data_type=ReservoirDataType.TOTAL_VOLUME,
         intake_elevation=0.0,
         operation_cost=HydroReservoirCost.example(),
@@ -48,6 +47,7 @@ def hydro_turbine(bus):
         time_limits=None,
         operation_cost=HydroGenerationCost.example(),
         prime_mover_type=PrimeMoversType.OT,
+        travel_time=0.0,
     )
 
 
