@@ -24,7 +24,6 @@ def head_reservoir():
         inflow=0.0,
         outflow=0.0,
         level_targets=1000.0,
-        travel_time=0.0,
         level_data_type="USABLE_VOLUME",
         intake_elevation=0.0,
         operation_cost=HydroReservoirCost.example(),
@@ -42,7 +41,6 @@ def tail_reservoir():
         inflow=0.0,
         outflow=0.0,
         level_targets=0.0,
-        travel_time=0.0,
         level_data_type="USABLE_VOLUME",
         intake_elevation=0.0,
         operation_cost=HydroReservoirCost.example(),
@@ -73,6 +71,7 @@ def hydro_pump_turbine(bus, head_reservoir, tail_reservoir):
         transition_time=TurbinePump(turbine=0.25, pump=0.25),
         operation_cost=HydroGenerationCost.example(),
         minimum_time=TurbinePump(turbine=1.0, pump=1.0),
+        travel_time=0.0,
     )
 
 

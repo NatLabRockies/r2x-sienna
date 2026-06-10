@@ -1248,7 +1248,7 @@ class HydroReservoir(Device):
         float | int,
         Field(
             alias="Max Level",
-            description="Maximum level",
+            description="r2x-sienna extension: maximum reservoir level retained for compatibility.",
             ge=0,
         ),
     ] = 1e30
@@ -1272,11 +1272,6 @@ class HydroReservoir(Device):
             description="Reservoir level targets at the end of a simulation as a fraction of the storage_level_limits.max."
         ),
     ] = None
-    travel_time: Annotated[
-        float | None,
-        Unit("hour"),
-        Field(description="Downstream travel time in hours."),
-    ] = None
     intake_elevation: Annotated[
         float,
         Unit("m"),
@@ -1288,7 +1283,7 @@ class HydroReservoir(Device):
     ] = LinearCurve(0.0)
     reservoir_location: Annotated[
         ReservoirLocation,
-        Field(description="Location of the reservoir relative to the turbine."),
+        Field(description="r2x-sienna extension: location of the reservoir relative to the turbine."),
     ] = ReservoirLocation.HEAD
     operation_cost: Annotated[
         HydroReservoirCost,
@@ -1301,15 +1296,15 @@ class HydroReservoir(Device):
     upstream_turbines: Annotated[
         list["HydroTurbine | HydroPumpTurbine"],
         Field(description="HydroTurbine(s) or HydroPumpTurbine(s) upstream of this reservoir."),
-    ] = []
+    ] = Field(default_factory=list)
     downstream_turbines: Annotated[
         list["HydroTurbine | HydroPumpTurbine"],
         Field(description="HydroTurbine(s) or HydroPumpTurbine(s) downstream of this reservoir."),
-    ] = []
+    ] = Field(default_factory=list)
     upstream_reservoirs: Annotated[
         list["HydroReservoir"],
         Field(description="HydroReservoir(s) upstream of this reservoir."),
-    ] = []
+    ] = Field(default_factory=list)
 
     @classmethod
     def example(cls) -> "HydroReservoir":
@@ -1322,7 +1317,6 @@ class HydroReservoir(Device):
             inflow=50.0,
             outflow=30.0,
             level_targets=0.8,
-            travel_time=2.0,
             intake_elevation=500.0,
             head_to_volume_factor=LinearCurve(1.0),
             reservoir_location=ReservoirLocation.HEAD,
@@ -1414,10 +1408,15 @@ class HydroTurbine(HydroGen):
         float,
         Field(ge=0, description="Conversion factor from flow/volume to energy: m^3 -> p.u-hr."),
     ] = 1.0
+    travel_time: Annotated[
+        float | None,
+        Unit("hour"),
+        Field(description="Downstream travel time in hours."),
+    ] = None
     reservoirs: Annotated[
         list[HydroReservoir],
-        Field(description="HydroReservoir(s) that this component is connected to."),
-    ] = []
+        Field(description="r2x-sienna extension: HydroReservoir(s) that this component is connected to."),
+    ] = Field(default_factory=list)
     prime_mover_type: Annotated[
         PrimeMoversType, Field(description="Prime mover technology according to EIA 923.")
     ]
@@ -1444,6 +1443,7 @@ class HydroTurbine(HydroGen):
             turbine_type=HydroTurbineType.FRANCIS,
             prime_mover_type=PrimeMoversType.OT,
             conversion_factor=1.0,
+            travel_time=2.0,
             reservoirs=[reservoir],
             category="hydro_turbine",
         )
@@ -1548,6 +1548,11 @@ class HydroPumpTurbine(HydroGen):
             description="Initial active power set point of the pump unit in MW. For power flow, this is the steady state operating point of the system. For production cost modeling, this may or may not be used as the initial starting point for the solver, depending on the solver used."
         ),
     ] = 0.0
+    travel_time: Annotated[
+        float | None,
+        Unit("hour"),
+        Field(description="Downstream travel time in hours."),
+    ] = None
     efficiency: Annotated[
         TurbinePump,
         Unit("%"),
@@ -1586,7 +1591,6 @@ class HydroPumpTurbine(HydroGen):
             inflow=30.0,
             outflow=0.0,
             level_targets=0.8,
-            travel_time=1.0,
             intake_elevation=800.0,
             head_to_volume_factor=LinearCurve(1.0),
             reservoir_location=ReservoirLocation.HEAD,
@@ -1603,7 +1607,6 @@ class HydroPumpTurbine(HydroGen):
             inflow=0.0,
             outflow=20.0,
             level_targets=0.5,
-            travel_time=0.5,
             intake_elevation=400.0,
             head_to_volume_factor=LinearCurve(1.0),
             reservoir_location=ReservoirLocation.TAIL,
@@ -1632,6 +1635,7 @@ class HydroPumpTurbine(HydroGen):
             time_at_status=0.0,
             operation_cost=HydroGenerationCost.example(),
             active_power_pump=0.0,
+            travel_time=1.0,
             prime_mover_type=PrimeMoversType.PS,
             efficiency=TurbinePump(turbine=0.90, pump=0.85),
             transition_time=TurbinePump(turbine=0.25, pump=0.25),

@@ -82,6 +82,7 @@ from .load import (
     ExponentialLoad,
     FACTSControlDevice,
     FixedAdmittance,
+    InterconnectingConverter,
     InterruptiblePowerLoad,
     InterruptibleStandardLoad,
     MotorLoad,
@@ -101,7 +102,15 @@ from .named_tuples import (
     StartUpStages,
     UpDown,
 )
-from .services import Reserve, TransmissionInterface, VariableReserve
+from .services import (
+    ConstantReserveNonSpinning,
+    Reserve,
+    ReserveDemandCurve,
+    ReserveNonSpinning,
+    TransmissionInterface,
+    VariableReserve,
+    VariableReserveNonSpinning,
+)
 from .topology import ACBus, Arc, Area, Bus, DCBus, LoadZone
 
 __all__ = [
@@ -184,6 +193,7 @@ __all__ = [
     "HydroPumpTurbine",
     # load
     "FixedAdmittance",
+    "InterconnectingConverter",
     "MotorLoad",
     "ShiftablePowerLoad",
     "ActiveConstantPowerLoad",
@@ -205,9 +215,13 @@ __all__ = [
     "StartTimeLimits",
     "UpDown",
     # services
+    "ConstantReserveNonSpinning",
     "Reserve",
+    "ReserveDemandCurve",
+    "ReserveNonSpinning",
     "TransmissionInterface",
     "VariableReserve",
+    "VariableReserveNonSpinning",
     # topology
     "ACBus",
     "Arc",
