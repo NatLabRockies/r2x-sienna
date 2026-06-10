@@ -134,6 +134,7 @@ def test_reserve_demand_curve_import_construct_validate_and_round_trip_json():
     round_tripped = ReserveDemandCurve.model_validate_json(reserve.model_dump_json(round_trip=True))
 
     assert round_tripped.max_participation_factor == 0.5
+    assert round_tripped.variable is None
 
 
 def test_interconnecting_converter_import_construct_validate_and_round_trip_json():

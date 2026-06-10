@@ -2,6 +2,8 @@
 
 from typing import Annotated
 
+from infrasys.cost_curves import CostCurve
+from infrasys.time_series_models import TimeSeriesKey
 from pydantic import Field, NonNegativeFloat, PositiveFloat
 
 from r2x_sienna.models.core import Service
@@ -141,6 +143,10 @@ class ConstantReserveNonSpinning(ReserveNonSpinning):
 class ReserveDemandCurve(Service):
     """Reserve demand curve service."""
 
+    variable: Annotated[
+        TimeSeriesKey | CostCurve | None,
+        Field(description="Reserve demand curve data as a time series key or cost curve."),
+    ] = None
     time_frame: Annotated[
         NonNegativeFloat,
         Field(description="Timeframe in which the reserve is required in seconds."),
