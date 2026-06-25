@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/NatLabRockies/r2x-sienna/compare/v0.3.0...v0.4.0) (2026-06-25)
+
+
+### Features
+
+* add new types of load for r2x-psse use matching ([#10](https://github.com/NatLabRockies/r2x-sienna/issues/10)) ([c39397d](https://github.com/NatLabRockies/r2x-sienna/commit/c39397d0c2ae0a7079526ee6cf03a5261bc18da1))
+
+
+### Bug Fixes
+
+* **models:** sync hydro and reserve schemas ([#14](https://github.com/NatLabRockies/r2x-sienna/issues/14)) ([73afc09](https://github.com/NatLabRockies/r2x-sienna/commit/73afc09fd1636011f6efe3fe4668a82399ffb9c8))
+
 ## [0.3.0](https://github.com/NatLabRockies/r2x-sienna/compare/v0.2.1...v0.3.0) (2026-05-25)
 
 
