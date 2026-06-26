@@ -40,6 +40,14 @@ PARAMETRIZED_TYPES = {
     "ReserveUp": {"direction": ReserveDirection.UP},
 }
 
+# Sentinel returned by _try_deserialize_component (and propagated through
+# _deserialize_fields / _deserialize_composed_*) to indicate that a component
+# cannot ever be created — either because its own data is invalid, or because
+# one of its *required* composed-ref fields references a permanently-dead UUID.
+# Distinct from None («deferred – retry later») so callers can avoid
+# retrying these components indefinitely.
+_PERM_FAILURE = object()
+
 
 class SiennaParser(Plugin[SiennaConfig]):
     """Sienna parser class with explicit SiennaConfig type hint."""
@@ -52,6 +60,14 @@ class SiennaParser(Plugin[SiennaConfig]):
         self.component_fields: dict[str, Any] = {}
         self.uuid_map: dict[str, dict] = {}
         self.attribute_manager: dict | None = None
+        # UUIDs of components that permanently failed to deserialize.  Any
+        # component that references one of these via a composed-ref field will
+        # also be marked as a permanent failure (for required fields) or will
+        # fall back to None (for optional fields).
+        self.perm_failed_uuids: set[UUID] = set()
+        # (type_name, component_name) pairs for all permanently-failed components,
+        # used to raise a descriptive ValueError at the end.
+        self.perm_failed_components: list[tuple[str, str]] = []
 
     def on_prepare(self) -> Result[None, str]:
         """Prepare and normalize configuration and time-related data.
@@ -359,9 +375,19 @@ class SiennaParser(Plugin[SiennaConfig]):
         deserialized_types: set[type] = set()
         skipped_types: dict[type, list[dict[str, Any]]] = defaultdict(list)
         created_count = 0
+        perm_failed_count = 0
         for component_dict in components:
             component = self._try_deserialize_component(component_dict, cached_types)
-            if component is None:
+            if component is _PERM_FAILURE:
+                # Permanently failed — record UUID so downstream deps can fail fast.
+                type_name = (
+                    component_dict.get(TYPE_METADATA, {}).get("type", "?")
+                    if isinstance(component_dict.get(TYPE_METADATA), dict)
+                    else "?"
+                )
+                self._record_perm_failure(component_dict, type_name)
+                perm_failed_count += 1
+            elif component is None:
                 metadata = SerializedTypeMetadata.validate_python(component_dict[TYPE_METADATA])
                 assert isinstance(metadata, SerializedBaseType)
                 component_type = cached_types.get_type(metadata)
@@ -372,11 +398,12 @@ class SiennaParser(Plugin[SiennaConfig]):
 
         cached_types.add_deserialized_types(deserialized_types)
         logger.debug(
-            "First pass: deserialized {} components ({} types), skipped {} ({} types)",
+            "First pass: deserialized {} components ({} types), skipped {} ({} types), perm-failed {}",
             created_count,
             len(deserialized_types),
             sum(len(v) for v in skipped_types.values()),
             len(skipped_types),
+            perm_failed_count,
         )
         return skipped_types
 
@@ -385,8 +412,7 @@ class SiennaParser(Plugin[SiennaConfig]):
         skipped_types: dict[type, list[dict[str, Any]]],
         cached_types: CachedTypeHelper,
     ) -> None:
-        failed_components: list[tuple[type, dict[str, Any]]] = []
-        max_iterations = len(skipped_types)
+        max_iterations = len(skipped_types) + 1
         logger.debug(
             "Nested deserialization: {} deferred types, max {} iterations",
             len(skipped_types),
@@ -395,67 +421,175 @@ class SiennaParser(Plugin[SiennaConfig]):
 
         for iteration in range(max_iterations):
             deserialized_types: set[type] = set()
-            for component_type, components in skipped_types.items():
-                component = self._try_deserialize_component(components[0], cached_types)
-                if component is None:
-                    continue
-                if len(components) > 1:
-                    for component_dict in components[1:]:
-                        component = self._try_deserialize_component(component_dict, cached_types)
-                        if component is None:
-                            failed_components.append((component_type, component_dict))
-                deserialized_types.add(component_type)
+            remaining: dict[type, list[dict[str, Any]]] = {}
+            perm_failed_this_iter = 0
 
-            for component_type in deserialized_types:
-                skipped_types.pop(component_type)
+            for component_type, components in skipped_types.items():
+                pending: list[dict[str, Any]] = []
+                for component_dict in components:
+                    component = self._try_deserialize_component(component_dict, cached_types)
+                    if component is _PERM_FAILURE:
+                        # Permanently dead — record UUID, discard from retry queue.
+                        self._record_perm_failure(component_dict, component_type.__name__)
+                        perm_failed_this_iter += 1
+                    elif component is None:
+                        pending.append(component_dict)
+
+                if pending:
+                    # Some instances of this type still have unresolved references; retry next iteration
+                    remaining[component_type] = pending
+                else:
+                    # All instances of this type are now in the system (or permanently failed)
+                    deserialized_types.add(component_type)
+
+            skipped_types = remaining
             cached_types.add_deserialized_types(deserialized_types)
 
             resolved_names = [t.__name__ for t in deserialized_types]
             logger.debug(
-                "Nested iteration {}: resolved {} types ({}), {} remaining",
+                "Nested iteration {}: resolved {} types ({}), {} remaining, {} perm-failed",
                 iteration + 1,
                 len(deserialized_types),
                 ", ".join(resolved_names) if resolved_names else "none",
                 len(skipped_types),
+                perm_failed_this_iter,
             )
             if not skipped_types:
                 break
 
-        if failed_components:
-            # Log details about each failed component
-            for comp_type, comp_dict in failed_components:
-                name = comp_dict.get("name", "<unnamed>")
-                logger.error(
-                    f"Failed to deserialize {comp_type.__name__} component '{name}'. "
-                    "This may be due to invalid data that wasn't caught by the upgrader."
+            if not deserialized_types and not perm_failed_this_iter:
+                # No progress this iteration — circular dependency detected.
+                # Mirror PSY.jl's explicit ordering strategy: break the cycle by
+                # creating stuck components with empty lists for composed-list fields
+                # that reference types not yet in the system (e.g. HydroTurbine ↔
+                # HydroReservoir).  The next normal iteration can then resolve the
+                # reverse references now that the formerly-blocking types are in the
+                # system.
+                logger.debug(
+                    "Nested loop stuck at {} remaining types; attempting cycle-breaking "
+                    "partial deserialization (empty lists for unresolvable composed-list fields)",
+                    len(skipped_types),
                 )
+                partial_resolved, skipped_types = self._nested_pass(skipped_types, cached_types, partial=True)
+                cached_types.add_deserialized_types(partial_resolved)
+                if partial_resolved:
+                    logger.debug(
+                        "Cycle-breaking resolved {} types: {}",
+                        len(partial_resolved),
+                        [t.__name__ for t in partial_resolved],
+                    )
+                else:
+                    logger.debug("Cycle-breaking made no progress; stopping nested loop")
+                    break
+                if not skipped_types:
+                    break
 
-            failed_names = [c[1].get("name", "<unnamed>") for c in failed_components]
+        if skipped_types or self.perm_failed_components:
+            # Build error summary from BOTH still-stuck (unresolvable deps) AND
+            # permanently-failed (invalid data / cascading dead ref) components.
+            failed_by_type: dict[str, int] = {}
+
+            # Stuck components (unresolvable deps after all iterations)
+            for comp_type, comp_dicts in skipped_types.items():
+                failed_by_type[comp_type.__name__] = failed_by_type.get(comp_type.__name__, 0) + len(
+                    comp_dicts
+                )
+                for comp_dict in comp_dicts:
+                    name = comp_dict.get("name", "<unnamed>")
+                    logger.error(
+                        "Failed to deserialize {} component '{}'. "
+                        "This may be due to invalid data that wasn't caught by the upgrader.",
+                        comp_type.__name__,
+                        name,
+                    )
+
+            # Permanently-failed components (logged as WARNING by _try_deserialize_component)
+            for type_name, comp_name in self.perm_failed_components:
+                failed_by_type[type_name] = failed_by_type.get(type_name, 0) + 1
+
+            total = sum(failed_by_type.values())
+            type_summary = ", ".join(f"{t}: {n}" for t, n in failed_by_type.items())
+            # Include a sampling of names for easy identification.
+            name_sample = ", ".join(
+                name for _, name in self.perm_failed_components[:10] if name != "<unnamed>"
+            )
             msg = (
-                f"Failed to deserialize {len(failed_components)} component(s): {failed_names}. "
-                "Check the log for details. This typically indicates data validation errors "
-                "that should be fixed in the upgrader (see upgrade_steps.py)."
+                f"Failed to deserialize {total} component(s) ({type_summary})"
+                + (f" — including: {name_sample}" if name_sample else "")
+                + ". Check the log for per-component details."
             )
             raise ValueError(msg)
 
-        if skipped_types:
-            msg = f"Bug: still have types remaining to be deserialized: {skipped_types.keys()}"
-            raise Exception(msg)
+    def _nested_pass(
+        self,
+        skipped_types: dict[type, list[dict[str, Any]]],
+        cached_types: CachedTypeHelper,
+        partial: bool = False,
+    ) -> tuple[set[type], dict[type, list[dict[str, Any]]]]:
+        """Run one deserialization iteration over skipped_types.
 
-    def _try_deserialize_component(self, component: dict[str, Any], cached_types: CachedTypeHelper) -> Any:
-        values = self._deserialize_fields(component, cached_types)
+        Parameters
+        ----------
+        partial:
+            When True, composed-list fields whose references cannot be resolved are
+            silently set to empty lists instead of deferring the whole component.
+            Use this to break circular dependencies (e.g. HydroTurbine ↔ HydroReservoir).
+        """
+        deserialized_types: set[type] = set()
+        remaining: dict[type, list[dict[str, Any]]] = {}
+        for component_type, components in skipped_types.items():
+            pending: list[dict[str, Any]] = []
+            for component_dict in components:
+                component = self._try_deserialize_component(component_dict, cached_types, partial=partial)
+                if component is _PERM_FAILURE:
+                    self._record_perm_failure(component_dict, component_type.__name__)
+                elif component is None:
+                    pending.append(component_dict)
+            if pending:
+                remaining[component_type] = pending
+            else:
+                deserialized_types.add(component_type)
+        return deserialized_types, remaining
+
+    def _try_deserialize_component(
+        self, component: dict[str, Any], cached_types: CachedTypeHelper, partial: bool = False
+    ) -> Any:
+        """Attempt to deserialize one component dict.
+
+        Returns
+        -------
+        component object
+            Successfully created and added to the system.
+        None
+            One or more deps are not in the system yet; retry next iteration.
+        _PERM_FAILURE (sentinel)
+            The component can never be created (type unknown, data invalid, or a
+            required dep is permanently dead).  The caller must NOT retry it.
+        """
+        values = self._deserialize_fields(component, cached_types, partial=partial)
         if values is None:
             return None
+        if values is _PERM_FAILURE:
+            return _PERM_FAILURE
 
-        metadata = SerializedTypeMetadata.validate_python(component[TYPE_METADATA])
-        component_type_raw = cached_types.get_type(metadata)
+        try:
+            metadata = SerializedTypeMetadata.validate_python(component[TYPE_METADATA])
+            component_type_raw = cached_types.get_type(metadata)
+        except Exception as exc:
+            logger.warning(
+                "Cannot resolve type for component ({}): {}",
+                component.get(TYPE_METADATA, {}).get("type", "?"),
+                exc,
+            )
+            return _PERM_FAILURE
+
         if not isinstance(component_type_raw, type) or not issubclass(component_type_raw, Component):
             logger.warning(
                 "Skipped unsupported deserialized type {}.{}",
                 metadata.module,
                 metadata.type,
             )
-            return None
+            return _PERM_FAILURE
 
         component_type: type[Component] = component_type_raw
         component_name = values.get("name", "<unnamed>")
@@ -476,7 +610,7 @@ class SiennaParser(Plugin[SiennaConfig]):
                 component_name,
                 result.err(),
             )
-            return None
+            return _PERM_FAILURE
         actual_component = result.ok()
         if actual_component is not None:
             self.system._components.add(actual_component, deserialization_in_progress=True)
@@ -488,13 +622,64 @@ class SiennaParser(Plugin[SiennaConfig]):
             )
         return actual_component
 
-    def _deserialize_fields(self, component: dict[str, Any], cached_types: CachedTypeHelper) -> dict | None:
+    def _record_perm_failure(self, component_dict: dict[str, Any], type_name: str) -> None:
+        """Register a component as permanently failed and update tracking state."""
+        uuid = component_dict.get("uuid")
+        if isinstance(uuid, UUID):
+            self.perm_failed_uuids.add(uuid)
+        comp_name = component_dict.get("name", "<unnamed>")
+        self.perm_failed_components.append((type_name, comp_name))
+
+    @staticmethod
+    def _is_optional_field(component_type: type, field_name: str) -> bool:
+        """Return True if *field_name* on *component_type* accepts None values.
+
+        Uses the Pydantic v2 FieldInfo to check whether NoneType appears in
+        the field's type annotation, which means the field can be omitted /
+        set to None without causing a validation error.
+        """
+        import typing
+
+        field_info = component_type.model_fields.get(field_name)
+        if field_info is None:
+            return True  # Unknown field — create_component will filter it out anyway
+        return type(None) in typing.get_args(field_info.annotation)
+
+    def _deserialize_fields(
+        self, component: dict[str, Any], cached_types: CachedTypeHelper, partial: bool = False
+    ) -> dict | None:
+        """Deserialize all fields of a component dict.
+
+        Returns
+        -------
+        dict
+            Resolved field values ready to be passed to create_component.
+        None
+            One or more composed-ref fields reference a type/UUID that isn't in
+            the system yet.  The caller should defer and retry this component.
+        _PERM_FAILURE (sentinel object)
+            A composed-ref field references a UUID that is permanently dead AND
+            the field is required (does not accept None).  The component can
+            never be created; the caller should discard it permanently.
+        """
         values: dict[str, Any] = {}
         comp_type_hint = (
             component.get(TYPE_METADATA, {}).get("type", "?")
             if isinstance(component.get(TYPE_METADATA), dict)
             else "?"
         )
+
+        # Resolve the component's own type so we can check field optionality
+        # when a dead-UUID is encountered.  Failure here is non-fatal; we
+        # fall back to "required" (safest assumption).
+        component_type: type | None = None
+        if isinstance(component.get(TYPE_METADATA), dict):
+            try:
+                _meta = SerializedTypeMetadata.validate_python(component[TYPE_METADATA])
+                component_type = cached_types.get_type(_meta)
+            except Exception:
+                pass
+
         for field, value in component.items():
             if isinstance(value, dict) and TYPE_METADATA in value:
                 metadata = SerializedTypeMetadata.validate_python(value[TYPE_METADATA])
@@ -506,14 +691,33 @@ class SiennaParser(Plugin[SiennaConfig]):
                         metadata.uuid,
                     )
                     composed_value = self._deserialize_composed_value(metadata, cached_types)
-                    if composed_value is None:
+                    if composed_value is _PERM_FAILURE:
+                        # The referenced component is permanently dead.
+                        # If the field allows None we can silently use None
+                        # and continue; otherwise this component is dead too.
+                        if component_type and self._is_optional_field(component_type, field):
+                            logger.trace(
+                                "Field '{}' on {}: dead ref, field is optional — using None",
+                                field,
+                                comp_type_hint,
+                            )
+                            values[field] = None
+                        else:
+                            logger.trace(
+                                "Field '{}' on {}: dead ref, field is required — cascading failure",
+                                field,
+                                comp_type_hint,
+                            )
+                            return _PERM_FAILURE  # type: ignore[return-value]
+                    elif composed_value is None:
                         logger.trace(
                             "Field '{}' on {}: composed ref not yet available, deferring",
                             field,
                             comp_type_hint,
                         )
                         return None
-                    values[field] = composed_value
+                    else:
+                        values[field] = composed_value
                 elif isinstance(metadata, SerializedQuantityType):
                     quantity_type = cached_types.get_type(metadata)
                     values[field] = quantity_type(value=value["value"], units=value["units"])
@@ -540,13 +744,32 @@ class SiennaParser(Plugin[SiennaConfig]):
                 logger.trace(
                     "Field '{}' on {}: resolving composed list ({} items)", field, comp_type_hint, len(value)
                 )
-                composed_values = self._deserialize_composed_list(value, cached_types)
-                if composed_values is None:
+                composed_values = self._deserialize_composed_list(value, cached_types, partial=partial)
+                if composed_values is _PERM_FAILURE:
+                    # One or more items in the list are permanently dead.
+                    # Optional list fields fall back to an empty list; required
+                    # list fields cascade the permanent failure.
+                    if component_type and self._is_optional_field(component_type, field):
+                        logger.trace(
+                            "Field '{}' on {}: dead list ref, field is optional — using []",
+                            field,
+                            comp_type_hint,
+                        )
+                        values[field] = []
+                    else:
+                        logger.trace(
+                            "Field '{}' on {}: dead list ref, field is required — cascading failure",
+                            field,
+                            comp_type_hint,
+                        )
+                        return _PERM_FAILURE  # type: ignore[return-value]
+                elif composed_values is None:
                     logger.trace(
                         "Field '{}' on {}: composed list not yet available, deferring", field, comp_type_hint
                     )
                     return None
-                values[field] = composed_values
+                else:
+                    values[field] = composed_values
             elif field != TYPE_METADATA:
                 values[field] = value
 
@@ -555,9 +778,29 @@ class SiennaParser(Plugin[SiennaConfig]):
     def _deserialize_composed_value(
         self, metadata: SerializedComponentReference, cached_types: CachedTypeHelper
     ) -> Any:
+        # Fast-path: UUID is permanently dead — caller decides whether to use None
+        # (optional field) or propagate the failure (required field).
+        if metadata.uuid in self.perm_failed_uuids:
+            logger.trace(
+                "Composed ref permanently failed: uuid={} (in perm_failed_uuids)",
+                metadata.uuid,
+            )
+            return _PERM_FAILURE
         component_type = cached_types.get_type(metadata)
         if cached_types.allowed_to_deserialize(component_type):
-            resolved = self.system._components.get_by_uuid(metadata.uuid)
+            try:
+                resolved = self.system._components.get_by_uuid(metadata.uuid)
+            except Exception:
+                # The type is known but this specific instance isn't in the system yet
+                # (another instance of the same type succeeded first-pass, marking the type
+                # as allowed, while this UUID is still pending in skipped_types).
+                # Return None to defer the referencing component for the next iteration.
+                logger.trace(
+                    "Composed ref deferred: {} uuid={} (type allowed but UUID not yet in system)",
+                    component_type.__name__,
+                    metadata.uuid,
+                )
+                return None
             logger.trace("Resolved composed ref: {} uuid={}", component_type.__name__, metadata.uuid)
             return resolved
         logger.trace(
@@ -568,23 +811,72 @@ class SiennaParser(Plugin[SiennaConfig]):
         return None
 
     def _deserialize_composed_list(
-        self, components: list[dict[str, Any]], cached_types: CachedTypeHelper
+        self, components: list[dict[str, Any]], cached_types: CachedTypeHelper, partial: bool = False
     ) -> list[Any] | None:
         deserialized_components: list[Any] = []
         for component in components:
             metadata = SerializedTypeMetadata.validate_python(component[TYPE_METADATA])
             assert isinstance(metadata, SerializedComponentReference)
+
+            # Permanently-dead UUID: skip in partial/cycle-breaking mode; otherwise
+            # signal failure so the caller can decide (optional list → [] or cascade).
+            if metadata.uuid in self.perm_failed_uuids:
+                if partial:
+                    logger.trace(
+                        "Composed list partial: {} uuid={} permanently failed, skipping item",
+                        metadata.uuid,
+                    )
+                    continue
+                logger.trace(
+                    "Composed list dead ref: {} uuid={} permanently failed",
+                    metadata.uuid,
+                )
+                return _PERM_FAILURE  # type: ignore[return-value]
+
             component_type = cached_types.get_type(metadata)
             if cached_types.allowed_to_deserialize(component_type):
-                deserialized_components.append(self.system._components.get_by_uuid(metadata.uuid))
+                try:
+                    deserialized_components.append(self.system._components.get_by_uuid(metadata.uuid))
+                except Exception:
+                    # The type is known but this specific UUID is still pending
+                    # (another instance of the same type succeeded earlier).
+                    if partial:
+                        # Cycle-breaking mode: skip this item rather than deferring
+                        # the whole component.  Mirrors PSY.jl's explicit ordering
+                        # where HydroTurbine is processed before HydroReservoir so
+                        # the back-reference (turbine.reservoirs) starts as [].
+                        logger.trace(
+                            "Composed list partial: {} uuid={} not yet in system, skipping item",
+                            component_type.__name__,
+                            metadata.uuid,
+                        )
+                        continue
+                    logger.trace(
+                        "Composed list deferred: {} uuid={} (type allowed but UUID not yet in system)",
+                        component_type.__name__,
+                        metadata.uuid,
+                    )
+                    return None
             else:
+                if partial:
+                    # Type not yet deserialized; skip item in cycle-breaking mode
+                    logger.trace(
+                        "Composed list partial: {} uuid={} type not yet deserialized, skipping item",
+                        component_type.__name__,
+                        metadata.uuid,
+                    )
+                    continue
                 logger.trace(
                     "Composed list deferred: {} uuid={} not yet available",
                     component_type.__name__,
                     metadata.uuid,
                 )
                 return None
-        logger.trace("Resolved composed list: {} items", len(deserialized_components))
+        logger.trace(
+            "Resolved composed list: {} items{}",
+            len(deserialized_components),
+            " (partial)" if partial else "",
+        )
         return deserialized_components
 
     def _h5_manager(self) -> None:

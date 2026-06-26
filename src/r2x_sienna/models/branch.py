@@ -514,7 +514,7 @@ class PhaseShiftingTransformer(TwoWindingTransformer):
             ),
         ),
     ]
-    α: Annotated[float, Field(ge=-1.571, le=1.571, description="Phase angle in radians")]
+    α: Annotated[float, Field(description="Phase angle in radians")]
     phase_angle_limits: MinMax
 
     @classmethod

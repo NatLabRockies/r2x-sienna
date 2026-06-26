@@ -40,7 +40,7 @@ class Area(AggregationTopology):
 class LoadZone(AggregationTopology):
     """Collection of buses for electricity price analysis."""
 
-    peak_active_power: Annotated[NonNegativeFloat, Field(description="Peak active power in the area")] = 0.0
+    peak_active_power: Annotated[float, Field(description="Peak active power in the area")] = 0.0
     peak_reactive_power: Annotated[float, Field(description="Peak reactive power in the area")] = 0.0
 
     @classmethod
@@ -57,7 +57,7 @@ class Bus(Topology):
     load_zone: Annotated[LoadZone, Field(description="the load zone containing the DC bus.")] | None = None
     voltage_limits: Annotated[MinMax, Field(description="the voltage limits")] | None = None
     base_voltage: (
-        Annotated[Voltage, Field(gt=0, description="Base voltage in kV. Unit compatible with voltage.")]
+        Annotated[Voltage, Field(ge=0, description="Base voltage in kV. Unit compatible with voltage.")]
         | None
     ) = None
     magnitude: (
