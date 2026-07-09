@@ -40,12 +40,8 @@ PARAMETRIZED_TYPES = {
     "ReserveUp": {"direction": ReserveDirection.UP},
 }
 
-# Sentinel returned by _try_deserialize_component (and propagated through
-# _deserialize_fields / _deserialize_composed_*) to indicate that a component
-# cannot ever be created — either because its own data is invalid, or because
+# A component cannot be created — either because its own data is invalid, or because
 # one of its *required* composed-ref fields references a permanently-dead UUID.
-# Distinct from None («deferred – retry later») so callers can avoid
-# retrying these components indefinitely.
 _PERM_FAILURE = object()
 
 
@@ -458,13 +454,9 @@ class SiennaParser(Plugin[SiennaConfig]):
                 break
 
             if not deserialized_types and not perm_failed_this_iter:
-                # No progress this iteration — circular dependency detected.
                 # Mirror PSY.jl's explicit ordering strategy: break the cycle by
                 # creating stuck components with empty lists for composed-list fields
-                # that reference types not yet in the system (e.g. HydroTurbine ↔
-                # HydroReservoir).  The next normal iteration can then resolve the
-                # reverse references now that the formerly-blocking types are in the
-                # system.
+                # that reference types not yet in the system.
                 logger.debug(
                     "Nested loop stuck at {} remaining types; attempting cycle-breaking "
                     "partial deserialization (empty lists for unresolvable composed-list fields)",
@@ -670,8 +662,7 @@ class SiennaParser(Plugin[SiennaConfig]):
         )
 
         # Resolve the component's own type so we can check field optionality
-        # when a dead-UUID is encountered.  Failure here is non-fatal; we
-        # fall back to "required" (safest assumption).
+        # when a dead-UUID is encountered.
         component_type: type | None = None
         if isinstance(component.get(TYPE_METADATA), dict):
             try:
@@ -794,7 +785,6 @@ class SiennaParser(Plugin[SiennaConfig]):
                 # The type is known but this specific instance isn't in the system yet
                 # (another instance of the same type succeeded first-pass, marking the type
                 # as allowed, while this UUID is still pending in skipped_types).
-                # Return None to defer the referencing component for the next iteration.
                 logger.trace(
                     "Composed ref deferred: {} uuid={} (type allowed but UUID not yet in system)",
                     component_type.__name__,
@@ -841,10 +831,6 @@ class SiennaParser(Plugin[SiennaConfig]):
                     # The type is known but this specific UUID is still pending
                     # (another instance of the same type succeeded earlier).
                     if partial:
-                        # Cycle-breaking mode: skip this item rather than deferring
-                        # the whole component.  Mirrors PSY.jl's explicit ordering
-                        # where HydroTurbine is processed before HydroReservoir so
-                        # the back-reference (turbine.reservoirs) starts as [].
                         logger.trace(
                             "Composed list partial: {} uuid={} not yet in system, skipping item",
                             component_type.__name__,
