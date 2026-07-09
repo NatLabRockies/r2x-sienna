@@ -361,7 +361,7 @@ class TestDeserializeComponentsNested:
                 json_path=str(json_path),
                 model_year=2029,
                 system_name="test",
-                skip_validation=True,  # Even with this, Pydantic still validates
+                skip_validation=False,  # Must be False so Pydantic enforces PositiveInt on number=0
             )
             store = DataStore.from_data_files([], path=json_path.parent)
             ctx = PluginContext(config, store=store)
