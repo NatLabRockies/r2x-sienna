@@ -50,17 +50,25 @@ def test_service_and_topology_examples():
 
 def test_load_examples():
     """Test load-related example constructors."""
-    from r2x_sienna.models.load import FACTSControlDevice, FixedAdmittance, PowerLoad, SwitchedAdmittance
+    from r2x_sienna.models.load import (
+        FACTSControlDevice,
+        FixedAdmittance,
+        InterconnectingConverter,
+        PowerLoad,
+        SwitchedAdmittance,
+    )
 
     facts = FACTSControlDevice.example()
     power_load = PowerLoad.example()
     fixed = FixedAdmittance.example()
     switched = SwitchedAdmittance.example()
+    ic = InterconnectingConverter.example()
 
     assert facts.control_mode is not None
     assert power_load.active_power is not None
     assert fixed.Y.imag < 0
     assert len(switched.number_of_steps) == 3
+    assert ic.name == "InterconnectingConverter_1"
 
 
 def test_emissions_data_example():
@@ -141,6 +149,23 @@ def test_emissions_data_negative_gwp_rejected():
             basis=EmissionBasis.POWER_OUTPUT,
             energy_unit=EnergyUnit.MWH,
             gwp=-1.0,
+        )
+
+
+def test_emissions_data_negative_emission_rate_rejected():
+    """A negative scalar emission_rate must raise a validation error (attributes.py:137)."""
+    import pytest
+    from pydantic import ValidationError
+    from r2x_sienna.models.attributes import EmissionsData
+    from r2x_sienna.models.enums import EmissionBasis, EnergyUnit, PollutantType
+
+    with pytest.raises(ValidationError):
+        EmissionsData(
+            name="bad_rate",
+            pollutant=PollutantType.CO2,
+            emission_rate=-0.5,  # negative float → triggers the raise on line 137
+            basis=EmissionBasis.POWER_OUTPUT,
+            energy_unit=EnergyUnit.MWH,
         )
 
 

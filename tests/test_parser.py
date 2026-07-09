@@ -5,6 +5,7 @@ a minimal test data set.
 """
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -98,6 +99,145 @@ def test_parser_builds_2area_5bus_with_source(data_folder: Path):
     source_bus1 = next(source for source in sources if source.name == "source_bus1")
     assert source_bus1.operation_cost is not None
     assert source_bus1.operation_cost.ancillary_service_offers == []
+
+
+def _write_minimal_json(tmpdir: str, components: list) -> "Path":
+    """Write a minimal Sienna-format JSON file to *tmpdir* and return its path."""
+    import json
+    from pathlib import Path
+
+    data = {
+        "data_format_version": "3.0.0",
+        "data": {
+            "components": components,
+            "supplemental_attribute_associations": [],
+            "supplemental_attributes": [],
+        },
+    }
+    p = Path(tmpdir) / "system.json"
+    p.write_text(json.dumps(data))
+    return p
+
+
+def _make_parser(json_path: "Path") -> "tuple[SiennaParser, Any]":
+    """Return a (parser, system) pair wired to *json_path*."""
+    from r2x_core import DataStore, PluginContext, System
+
+    config = SiennaConfig(json_path=str(json_path), model_year=2029, system_name="test")
+    store = DataStore.from_data_files([], path=json_path.parent)
+    ctx = PluginContext(config, store=store)
+    parser = SiennaParser.from_context(ctx)
+    parser.on_prepare()
+    parser.on_upgrade()
+    system = System(name="test")
+    parser._ctx.system = system
+    return parser, system
+
+
+def test_all_components_deserialized_in_first_pass():
+    """When every component has no composed-ref deps, the nested pass is skipped.
+
+    Covers parser.py: the ``else`` branch (line ~374) of the ``if skipped_types``
+    guard inside ``_deserialize_components``.
+    """
+    import tempfile
+
+    components = [
+        {
+            "__metadata__": {"module": "PowerSystems", "type": "Area"},
+            "name": "A1",
+            "internal": {
+                "uuid": {"value": "a1a1a1a1-0000-0000-0000-000000000001"},
+                "ext": None,
+                "units_info": None,
+            },
+            "peak_active_power": 10.0,
+            "peak_reactive_power": 5.0,
+            "load_response": 0.0,
+        },
+        {
+            "__metadata__": {"module": "PowerSystems", "type": "LoadZone"},
+            "name": "Z1",
+            "internal": {
+                "uuid": {"value": "a1a1a1a1-0000-0000-0000-000000000002"},
+                "ext": None,
+                "units_info": None,
+            },
+            "peak_active_power": 10.0,
+            "peak_reactive_power": 5.0,
+        },
+    ]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        json_path = _write_minimal_json(tmpdir, components)
+        parser, system = _make_parser(json_path)
+        parser._parse_components()  # must not raise — all resolved in first pass
+
+    assert sum(1 for _ in system._component_mgr.iter_all()) == 2
+
+
+def test_unknown_type_is_permanent_failure():
+    """A component whose type does not exist in r2x_sienna.models is permanently failed.
+
+    Covers parser.py:
+    - The ``_PERM_FAILURE`` branch inside ``_deserialize_components_first_pass``
+      (lines ~387-393).
+    - The "Cannot resolve type" warning + ``return _PERM_FAILURE`` inside
+      ``_try_deserialize_component`` (lines ~578-584).
+    """
+    import tempfile
+
+    components = [
+        # Area — valid, no deps, succeeds in first pass.
+        {
+            "__metadata__": {"module": "PowerSystems", "type": "Area"},
+            "name": "A1",
+            "internal": {
+                "uuid": {"value": "b2b2b2b2-0000-0000-0000-000000000001"},
+                "ext": None,
+                "units_info": None,
+            },
+            "peak_active_power": 10.0,
+            "peak_reactive_power": 5.0,
+            "load_response": 0.0,
+        },
+        # Unknown type — triggers "Cannot resolve type" → _PERM_FAILURE in first pass.
+        {
+            "__metadata__": {"module": "PowerSystems", "type": "NonExistentPSYType"},
+            "name": "ghost",
+            "internal": {
+                "uuid": {"value": "b2b2b2b2-0000-0000-0000-000000000002"},
+                "ext": None,
+                "units_info": None,
+            },
+        },
+        # ACBus referencing Area — deferred in first pass, triggers the nested loop
+        # so that perm_failed_components is checked and the ValueError is raised.
+        {
+            "__metadata__": {"module": "PowerSystems", "type": "ACBus"},
+            "name": "Bus1",
+            "number": 1,
+            "bustype": "PQ",
+            "angle": 0.0,
+            "magnitude": 1.0,
+            "base_voltage": 230.0,
+            "available": True,
+            "area": {"value": "b2b2b2b2-0000-0000-0000-000000000001"},
+            "internal": {
+                "uuid": {"value": "b2b2b2b2-0000-0000-0000-000000000003"},
+                "ext": None,
+                "units_info": None,
+            },
+            "ext": {},
+        },
+    ]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        json_path = _write_minimal_json(tmpdir, components)
+        parser, system = _make_parser(json_path)
+
+        with pytest.raises(ValueError, match="Failed to deserialize.*ghost"):
+            parser._parse_components()
 
 
 class TestDeserializeComponentsNested:
