@@ -40,9 +40,17 @@ PARAMETRIZED_TYPES = {
     "ReserveUp": {"direction": ReserveDirection.UP},
 }
 
-# A component cannot be created — either because its own data is invalid, or because
-# one of its *required* composed-ref fields references a permanently-dead UUID.
-_PERM_FAILURE = object()
+
+class _PermFailure:
+    """Singleton sentinel for components that can never be deserialized.
+
+    Returned (instead of ``None``) by ``_try_deserialize_component`` and
+    propagated through ``_deserialize_fields`` / ``_deserialize_composed_*``
+    to signal a *permanent* failure — one that should not be retried.
+    """
+
+
+_PERM_FAILURE = _PermFailure()
 
 
 class SiennaParser(Plugin[SiennaConfig]):
@@ -561,7 +569,7 @@ class SiennaParser(Plugin[SiennaConfig]):
         values = self._deserialize_fields(component, cached_types, partial=partial)
         if values is None:
             return None
-        if values is _PERM_FAILURE:
+        if isinstance(values, _PermFailure):
             return _PERM_FAILURE
 
         try:
@@ -632,14 +640,14 @@ class SiennaParser(Plugin[SiennaConfig]):
         """
         import typing
 
-        field_info = component_type.model_fields.get(field_name)
+        field_info = getattr(component_type, "model_fields", {}).get(field_name)
         if field_info is None:
             return True  # Unknown field — create_component will filter it out anyway
         return type(None) in typing.get_args(field_info.annotation)
 
     def _deserialize_fields(
         self, component: dict[str, Any], cached_types: CachedTypeHelper, partial: bool = False
-    ) -> dict | None:
+    ) -> dict | _PermFailure | None:
         """Deserialize all fields of a component dict.
 
         Returns
@@ -699,7 +707,7 @@ class SiennaParser(Plugin[SiennaConfig]):
                                 field,
                                 comp_type_hint,
                             )
-                            return _PERM_FAILURE  # type: ignore[return-value]
+                            return _PERM_FAILURE
                     elif composed_value is None:
                         logger.trace(
                             "Field '{}' on {}: composed ref not yet available, deferring",
@@ -753,7 +761,7 @@ class SiennaParser(Plugin[SiennaConfig]):
                             field,
                             comp_type_hint,
                         )
-                        return _PERM_FAILURE  # type: ignore[return-value]
+                        return _PERM_FAILURE
                 elif composed_values is None:
                     logger.trace(
                         "Field '{}' on {}: composed list not yet available, deferring", field, comp_type_hint
@@ -802,7 +810,7 @@ class SiennaParser(Plugin[SiennaConfig]):
 
     def _deserialize_composed_list(
         self, components: list[dict[str, Any]], cached_types: CachedTypeHelper, partial: bool = False
-    ) -> list[Any] | None:
+    ) -> list[Any] | _PermFailure | None:
         deserialized_components: list[Any] = []
         for component in components:
             metadata = SerializedTypeMetadata.validate_python(component[TYPE_METADATA])
@@ -821,7 +829,7 @@ class SiennaParser(Plugin[SiennaConfig]):
                     "Composed list dead ref: {} uuid={} permanently failed",
                     metadata.uuid,
                 )
-                return _PERM_FAILURE  # type: ignore[return-value]
+                return _PERM_FAILURE
 
             component_type = cached_types.get_type(metadata)
             if cached_types.allowed_to_deserialize(component_type):
