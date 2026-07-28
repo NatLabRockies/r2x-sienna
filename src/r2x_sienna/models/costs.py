@@ -68,7 +68,7 @@ class HydroGenerationCost(OperationalCost):
             )
         ),
     ] = 0.0
-    variable: CostCurve | None = None
+    variable: CostCurve | FuelCurve | None = None
 
     @classmethod
     def example(cls) -> "HydroGenerationCost":
