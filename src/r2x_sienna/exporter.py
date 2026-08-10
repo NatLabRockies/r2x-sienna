@@ -19,6 +19,33 @@ OUTPUT_METADATA = {"__metadata__", "internal"}
 PARAMETRIZED_FIELDS = {"direction"}
 
 
+def set_time_series_scaling_factor_multiplier(
+    system: Any,
+    owner: Any,
+    name: str,
+    function_name: str,
+) -> None:
+    """Associate a PowerSystems scaling function with an existing time series."""
+    if not function_name:
+        raise ValueError("function_name must not be empty")
+
+    connection = system._time_series_mgr._metadata_store._con
+    payload = {"__metadata__": {"module": "PowerSystems", "function": function_name}}
+    updated = connection.execute(
+        """
+        UPDATE time_series_associations
+        SET scaling_factor_multiplier = ?
+        WHERE owner_uuid = ?
+          AND name = ?
+          AND time_series_type = 'SingleTimeSeries'
+        """,
+        (json.dumps(payload), str(owner.uuid), name),
+    ).rowcount
+    if not updated:
+        raise ValueError(f"No SingleTimeSeries named '{name}' is attached to {owner.name}")
+    connection.commit()
+
+
 def iter_supplemental_attributes(system: Any) -> Iterable[Any]:
     """Return iterable supplemental attributes from system manager APIs."""
     for manager_name in ("_supplemental_attribute_mgr", "_supplemental_attr_mgr", "_supplemental_mgr"):
