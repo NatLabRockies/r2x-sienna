@@ -543,7 +543,7 @@ class EnergyReservoirStorage(Storage):
     ]
     storage_capacity: Annotated[
         float,
-        Unit("MWh"),
+        Unit("MWh", base="base_power"),
         Field(
             ge=0,
             description="Maximum storage capacity (can be in units of, e.g., MWh for batteries or liters for hydrogen).",
