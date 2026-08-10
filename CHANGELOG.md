@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1](https://github.com/NatLabRockies/r2x-sienna/compare/v0.4.0...v0.4.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* preserve time series scaling metadata ([#28](https://github.com/NatLabRockies/r2x-sienna/issues/28)) ([0d9529a](https://github.com/NatLabRockies/r2x-sienna/commit/0d9529aa947b944b43705a381db2e613b0c3d339))
+* storage unit ([#25](https://github.com/NatLabRockies/r2x-sienna/issues/25)) ([69d48b0](https://github.com/NatLabRockies/r2x-sienna/commit/69d48b0d1a5488435dad8284157d1ce2effecb71))
+* test fix ([#29](https://github.com/NatLabRockies/r2x-sienna/issues/29)) ([7c6b3f9](https://github.com/NatLabRockies/r2x-sienna/commit/7c6b3f99447c2cca7e9a68e703fddbafdff3a017))
+
 ## [0.4.0](https://github.com/NatLabRockies/r2x-sienna/compare/v0.3.0...v0.4.0) (2026-06-25)
 
 
