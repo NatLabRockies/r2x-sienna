@@ -16,7 +16,9 @@ import r2x_sienna.exporter as exporter_mod
 from r2x_sienna.models import (
     ACBus,
     MinMax,
+    PowerLoad,
     PrimeMoversType,
+    RenewableDispatch,
     ThermalFuels,
     ThermalGenerationCost,
     ThermalStandard,
@@ -426,6 +428,65 @@ def test_to_psy_serialization_simple(simple_test_system, tmp_path):
     assert "data" in data
     assert "components" in data["data"]
     assert isinstance(data["data"]["components"], list)
+
+
+def test_set_time_series_scaling_factor_multiplier(infrasys_test_system):
+    """Test assigning a PowerSystems scaling function to an existing time series."""
+    solar = infrasys_test_system.get_component(RenewableDispatch, "PVBus5")
+    load = next(iter(infrasys_test_system.get_components(PowerLoad)))
+    connection = infrasys_test_system._time_series_mgr._metadata_store._con
+
+    exporter_mod.set_time_series_scaling_factor_multiplier(
+        infrasys_test_system,
+        solar,
+        "max_active_power",
+        "get_max_active_power",
+    )
+
+    solar_scaling = connection.execute(
+        """
+        SELECT scaling_factor_multiplier
+        FROM time_series_associations
+        WHERE owner_uuid = ? AND name = 'max_active_power'
+        """,
+        (str(solar.uuid),),
+    ).fetchone()[0]
+    load_scaling = connection.execute(
+        """
+        SELECT scaling_factor_multiplier
+        FROM time_series_associations
+        WHERE owner_uuid = ? AND name = 'max_active_power'
+        """,
+        (str(load.uuid),),
+    ).fetchone()[0]
+
+    expected = {"__metadata__": {"module": "PowerSystems", "function": "get_max_active_power"}}
+    assert json.loads(solar_scaling) == expected
+    assert load_scaling is None
+
+
+def test_set_time_series_scaling_factor_multiplier_requires_function(simple_test_system):
+    """Test rejecting an empty PowerSystems scaling function name."""
+    generator = simple_test_system.get_component(ThermalStandard, "thermal-standard-test")
+    with pytest.raises(ValueError, match="function_name must not be empty"):
+        exporter_mod.set_time_series_scaling_factor_multiplier(
+            simple_test_system,
+            generator,
+            "max_active_power",
+            "",
+        )
+
+
+def test_set_time_series_scaling_factor_multiplier_requires_series(simple_test_system):
+    """Test requiring the selected time series to exist on the component."""
+    generator = simple_test_system.get_component(ThermalStandard, "thermal-standard-test")
+    with pytest.raises(ValueError, match="No SingleTimeSeries named 'max_active_power'"):
+        exporter_mod.set_time_series_scaling_factor_multiplier(
+            simple_test_system,
+            generator,
+            "max_active_power",
+            "get_max_active_power",
+        )
 
 
 def test_psy_serialization_with_quantity():
