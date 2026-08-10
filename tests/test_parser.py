@@ -106,8 +106,6 @@ class TestDeserializeComponentsNested:
     The bug: When one component of a type deserializes successfully,
     the code assumes all other components of the same type will too.
     This is wrong because validation can fail for individual components.
-
-    See: parser.py line 314 - `assert component is not None`
     """
 
     def test_raises_valueerror_when_second_component_has_validation_error(self):
@@ -130,7 +128,7 @@ class TestDeserializeComponentsNested:
         # 1. Area component (no dependencies, deserialized first)
         # 2. Two ACBus components that reference Area
         #    - First ACBus: valid angle
-        #    - Second ACBus: invalid angle (outside -π/2 to π/2)
+        #    - Second ACBus: invalid bus number
         #
         # Note: Use {"value": "uuid"} format for references, which is how
         # actual Sienna JSON files represent component references.
@@ -221,7 +219,7 @@ class TestDeserializeComponentsNested:
                 json_path=str(json_path),
                 model_year=2029,
                 system_name="test",
-                skip_validation=True,  # Even with this, Pydantic still validates
+                skip_validation=False,
             )
             store = DataStore.from_data_files([], path=json_path.parent)
             ctx = PluginContext(config, store=store)
