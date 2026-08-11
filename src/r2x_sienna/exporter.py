@@ -323,7 +323,6 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
         try:
             logger.debug("Converting time series storage to HDF5")
             t0 = time.perf_counter()
-            self._ensure_standard_load_scaling_factors()
             self.system.convert_storage(time_series_storage_type=TimeSeriesStorageType.HDF5)
 
             storage_file_path = f"{self.output_path.stem}_time_series_storage.h5"
@@ -370,60 +369,6 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
         except Exception as e:
             logger.error("Failed to export time series: {}", e)
             raise
-
-    def _ensure_standard_load_scaling_factors(self) -> None:
-        """Fill missing scaling_factor_multiplier for StandardLoad max_active_power rows."""
-        sfm_obj = {"__metadata__": {"module": "PowerSystems", "function": "get_max_active_power"}}
-        sfm = json.dumps(sfm_obj)
-        con = self.system._time_series_mgr._metadata_store._con
-        updated = con.execute(
-            """
-            UPDATE time_series_associations
-            SET scaling_factor_multiplier = ?
-            WHERE owner_type IN ('StandardLoad', 'PowerLoad')
-              AND time_series_type = 'SingleTimeSeries'
-              AND name = 'max_active_power'
-            """,
-            (sfm,),
-        ).rowcount
-
-        # Keep time_series_metadata blobs aligned; Julia may deserialize from this table.
-        patched_metadata = 0
-        try:
-            rows = con.execute(
-                """
-                SELECT DISTINCT m.metadata_uuid, m.metadata
-                FROM time_series_metadata m
-                JOIN time_series_associations a ON a.metadata_uuid = m.metadata_uuid
-                WHERE a.owner_type IN ('StandardLoad', 'PowerLoad')
-                  AND a.time_series_type = 'SingleTimeSeries'
-                  AND a.name = 'max_active_power'
-                """
-            ).fetchall()
-            for metadata_uuid, metadata_blob in rows:
-                if metadata_blob is None:
-                    continue
-                try:
-                    metadata = json.loads(metadata_blob)
-                except Exception:
-                    continue
-                metadata["scaling_factor_multiplier"] = sfm_obj
-                con.execute(
-                    "UPDATE time_series_metadata SET metadata = ? WHERE metadata_uuid = ?",
-                    (json.dumps(metadata, separators=(",", ":")), metadata_uuid),
-                )
-                patched_metadata += 1
-        except Exception:
-            # Table/shape differs across versions; association patch above is still valuable.
-            patched_metadata = 0
-
-        con.commit()
-        if updated or patched_metadata:
-            logger.info(
-                "Patched {} StandardLoad associations and {} metadata blobs with scaling metadata",
-                updated,
-                patched_metadata,
-            )
 
     def _patch_compression_attributes(self, h5_path: Path) -> None:
         """Write compression-settings attributes to the ``time_series`` group.
