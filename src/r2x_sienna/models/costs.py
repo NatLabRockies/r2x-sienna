@@ -94,7 +94,10 @@ class ThermalGenerationCost(OperationalCost):
 
     fixed: Annotated[NonNegativeFloat, Field(description="Cost of using fuel in $ or $/hr.")] = 0.0
     shut_down: Annotated[NonNegativeFloat, Field(description="Cost to turn the unit off")] = 0.0
-    start_up: Annotated[NonNegativeFloat, Field(description="Cost to start the unit.")] = 0.0
+    start_up: Annotated[
+        NonNegativeFloat | StartUpStages,
+        Field(description="Cost to start the unit; can be scalar or staged (hot/warm/cold)."),
+    ] = 0.0
     variable: Annotated[CostCurve | FuelCurve | None, Field(description="Variable production cost")] = None
 
     @classmethod

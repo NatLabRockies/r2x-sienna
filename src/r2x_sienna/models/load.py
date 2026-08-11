@@ -50,6 +50,18 @@ class FACTSControlDevice(StaticInjection):
             ge=0, description="Maximum shunt current at the sending end bus; entered in MVA at unity voltage"
         ),
     ] = 9999.0
+    max_reactive_power: Annotated[
+        float,
+        Field(ge=0, description="Maximum reactive power ceiling (MVA)."),
+    ] = 9999.0
+    shunt_control_type: Annotated[
+        str,
+        Field(description="FACTS shunt control type (e.g., STATCOM or SVC)."),
+    ] = "STATCOM"
+    regulated_bus_number: Annotated[
+        int,
+        Field(description="Bus number whose voltage this device regulates; 0 means local bus."),
+    ] = 0
     reactive_power_required: Annotated[
         float, Field(description="Total MVAr required to hold voltage at sending bus, in %")
     ] = 100.0
@@ -102,11 +114,21 @@ class InterconnectingConverter(StaticInjection):
         Unit("pu", base="base_power"),
         Field(description="Minimum and maximum reactive power limits. Set to None if not applicable."),
     ] = None
-    max_dc_current: Annotated[float, Unit("A"), Field(ge=0, description="Maximum stable DC current limit.")]
+    dc_current: Annotated[float, Unit("A"), Field(ge=0, description="DC current (A) on the converter.")] = 0.0
+    max_dc_current: Annotated[
+        float,
+        Unit("A"),
+        Field(ge=0, description="Maximum stable DC current limit."),
+    ] = 1e8
     loss_function: Annotated[
         InputOutputCurve,
         Field(description="Converter loss model coefficients. PSY accepts linear or quadratic curves."),
     ] = LinearCurve(0.0)
+    dc_control: Annotated[str, Field(description="DC-side control mode.")] = "DC_VOLTAGE"
+    ac_control: Annotated[str, Field(description="AC-side control mode.")] = "AC_REACTIVE_POWER"
+    dc_setpoint: Annotated[float, Field(description="Converter DC setpoint in per-unit.")] = 0.0
+    ac_setpoint: Annotated[float, Field(description="Converter AC setpoint in per-unit.")] = 1.0
+    dc_voltage_droop: Annotated[float, Field(description="DC-voltage droop gain.")] = 0.0
     dynamic_injector: Annotated[
         DynamicInjection | None,
         Field(description="Dynamic injection model attached to this converter."),
@@ -159,14 +181,14 @@ class PowerLoad(StaticLoad):
             description="Base power of the unit (MVA) for per unitization.",
         ),
     ] = None
-    comformity: LoadConformity = LoadConformity.UNDEFINED
+    conformity: LoadConformity = Field(default=LoadConformity.UNDEFINED, validation_alias="comformity")
 
     @classmethod
     def example(cls) -> "PowerLoad":
         return PowerLoad(
             name="ExampleLoad",
             bus=ACBus.example(),
-            comformity=LoadConformity.CONFORMING,
+            conformity=LoadConformity.CONFORMING,
             active_power=ActivePower(1000, "MW"),
         )
 
@@ -177,7 +199,7 @@ class StandardLoad(StaticLoad):
     constant_reactive_power: float
     impedance_active_power: float
     impedance_reactive_power: float
-    comformity: LoadConformity = LoadConformity.UNDEFINED
+    conformity: LoadConformity = Field(default=LoadConformity.UNDEFINED, validation_alias="comformity")
     current_active_power: float
     current_reactive_power: float
     max_constant_active_power: float
@@ -215,7 +237,7 @@ class InterruptiblePowerLoad(ControllableLoad):
         Annotated[ActivePower, Field(gt=0, description=" Initial steady-state reactive power demand.")] | None
     ) = None
     operation_cost: LoadCost | None = None
-    comformity: LoadConformity = LoadConformity.UNDEFINED
+    conformity: LoadConformity = Field(default=LoadConformity.UNDEFINED, validation_alias="comformity")
 
 
 class InterruptibleStandardLoad(ControllableLoad):
@@ -446,6 +468,14 @@ class SwitchedAdmittance(ElectricLoad):
     admittance_limits: Annotated[
         MinMax, Field(description="Shunt admittance limits for switched shunt model")
     ] = MinMax(min=1.0, max=1.0)
+    control_mode: Annotated[
+        str,
+        Field(description="Switched shunt control mode (e.g., FIXED)."),
+    ] = "FIXED"
+    regulated_bus_number: Annotated[
+        int,
+        Field(description="Bus number regulated by this switched shunt; 0 means local bus."),
+    ] = 0
 
     @classmethod
     def example(cls) -> "SwitchedAdmittance":
@@ -493,3 +523,21 @@ class ActiveConstantPowerLoad(DynamicInjection):
     is_filter_differential: Annotated[
         int, Field(description="Boolean to decide if filter states are differential or algebraic.")
     ] = 1
+    states: Annotated[
+        list[str],
+        Field(description="State names for the active constant power load model."),
+    ] = [
+        "θ_pll",
+        "ϵ_pll",
+        "η",
+        "v_dc",
+        "γd",
+        "γq",
+        "ir_cnv",
+        "ii_cnv",
+        "vr_filter",
+        "vi_filter",
+        "ir_filter",
+        "ii_filter",
+    ]
+    n_states: Annotated[int, Field(description="Number of model states.")] = 12

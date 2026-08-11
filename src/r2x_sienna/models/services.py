@@ -175,6 +175,10 @@ class TransmissionInterface(Service):
     active_power_flow_limits: Annotated[
         MinMax, Field(description="Minimum and maximum active power flow limits on the interface (MW)")
     ]
+    violation_penalty: Annotated[
+        float,
+        Field(description="Penalty cost for violating interface flow limits."),
+    ] = 1e30
     direction_mapping: Annotated[
         dict[str, int],
         Field(
