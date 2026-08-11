@@ -678,3 +678,30 @@ def upgrade_geographic_info(system_data: dict[str, Any]) -> dict[str, Any]:
 
     logger.debug("Successfully completed upgrading GeographicInfo in upgrade_geographic_info.")
     return system_data
+
+
+@SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
+def upgrade_psy5_schema_fields(system_data: dict[str, Any]) -> dict[str, Any]:
+    """Normalize only required legacy fields to the current PSY5-aligned schema.
+
+    This step intentionally avoids populating optional/default-backed fields and
+    focuses only on canonical keys that are required by current models.
+    """
+    if not system_data_has_right_keys(system_data):
+        logger.debug("No data found. Skipping step")
+        return system_data
+
+    for comp in system_data["data"]["components"]:
+        comp_type = comp.get("__metadata__", {}).get("type")
+
+        # Load conformity typo compatibility from older payloads.
+        if comp_type in {"PowerLoad", "StandardLoad", "InterruptiblePowerLoad"}:
+            if "conformity" not in comp and "comformity" in comp:
+                comp["conformity"] = comp.get("comformity")
+
+        # Interface penalty introduced in newer PSY schema.
+        if comp_type == "TransmissionInterface":
+            comp.setdefault("violation_penalty", 1e30)
+
+    logger.debug("Completed PSY5 schema field normalization step.")
+    return system_data

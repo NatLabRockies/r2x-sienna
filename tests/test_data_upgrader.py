@@ -206,7 +206,7 @@ def test_upgrade_step_helpers_for_refs_and_branches() -> None:
     assert upgrade_steps._get_ref_uuid("bad") is None
 
 
-def test_upgrade_psy5_schema_fields_normalizes_legacy_keys_and_defaults() -> None:
+def test_upgrade_psy5_schema_fields_normalizes_only_required_fields() -> None:
     system_data = {
         "data": {
             "components": [
@@ -268,36 +268,36 @@ def test_upgrade_psy5_schema_fields_normalizes_legacy_keys_and_defaults() -> Non
     assert iface["violation_penalty"] == 1e30
 
     tap = next(c for c in comps if c.get("__metadata__", {}).get("type") == "TapTransformer")
-    assert tap["tap_limits"] == {"min": 0.9, "max": 1.1}
-    assert tap["number_of_tap_positions"] == 33
-    assert tap["regulated_bus_number"] == 0
-    assert tap["voltage_setpoint"] == 1.0
+    assert "tap_limits" not in tap
+    assert "number_of_tap_positions" not in tap
+    assert "regulated_bus_number" not in tap
+    assert "voltage_setpoint" not in tap
 
     tmodel = next(c for c in comps if c.get("__metadata__", {}).get("type") == "TModelHVDCLine")
-    assert tmodel["r"] == 0.01
-    assert tmodel["l"] == 0.02
-    assert tmodel["c"] == 0.03
-    assert tmodel["active_power_limits_from"] == {"min": 0.0, "max": 300.0}
-    assert tmodel["active_power_limits_to"] == {"min": -250.0, "max": 0.0}
+    assert "r" not in tmodel
+    assert "l" not in tmodel
+    assert "c" not in tmodel
+    assert "active_power_limits_from" not in tmodel
+    assert "active_power_limits_to" not in tmodel
 
     vsc = next(c for c in comps if c.get("__metadata__", {}).get("type") == "TwoTerminalVSCLine")
-    assert vsc["dc_control_from"] == "DC_VOLTAGE"
-    assert vsc["dc_control_to"] == "DC_POWER"
-    assert vsc["ac_control_from"] == "AC_REACTIVE_POWER"
-    assert vsc["ac_control_to"] == "AC_VOLTAGE"
-    assert vsc["rmpct_from"] == 100.0
-    assert vsc["rmpct_to"] == 100.0
+    assert "dc_control_from" not in vsc
+    assert "dc_control_to" not in vsc
+    assert "ac_control_from" not in vsc
+    assert "ac_control_to" not in vsc
+    assert "rmpct_from" not in vsc
+    assert "rmpct_to" not in vsc
 
     ipc = next(c for c in comps if c.get("__metadata__", {}).get("type") == "InterconnectingConverter")
-    assert ipc["max_dc_current"] == 1e8
-    assert ipc["dc_control"] == "DC_VOLTAGE"
+    assert "max_dc_current" not in ipc
+    assert "dc_control" not in ipc
 
     sa = next(c for c in comps if c.get("__metadata__", {}).get("type") == "SwitchedAdmittance")
-    assert sa["control_mode"] == "FIXED"
-    assert sa["regulated_bus_number"] == 0
+    assert "control_mode" not in sa
+    assert "regulated_bus_number" not in sa
 
     ers = next(c for c in comps if c.get("__metadata__", {}).get("type") == "EnergyReservoirStorage")
-    assert "operation_cost" in ers
+    assert "operation_cost" not in ers
 
 
 def test_upgrade_step_helpers_for_transformers() -> None:
