@@ -465,6 +465,32 @@ def test_set_time_series_scaling_factor_multiplier(infrasys_test_system):
     assert load_scaling is None
 
 
+def test_export_preserves_missing_time_series_scaling_factor(infrasys_test_system, tmp_path):
+    """Test that export does not assign a scaling function to raw load time series."""
+    load = next(iter(infrasys_test_system.get_components(PowerLoad)))
+    output_file = tmp_path / "system.json"
+    config = SiennaConfig(
+        model_year=2010,
+        system_name="Test System",
+        scenario="test",
+        system_base_power=100.0,
+        output_path=str(output_file),
+    )
+
+    SiennaExporter.from_context(PluginContext(config=config, system=infrasys_test_system)).run()
+
+    connection = infrasys_test_system._time_series_mgr._metadata_store._con
+    scaling = connection.execute(
+        """
+        SELECT scaling_factor_multiplier
+        FROM time_series_associations
+        WHERE owner_uuid = ? AND name = 'max_active_power'
+        """,
+        (str(load.uuid),),
+    ).fetchone()[0]
+    assert scaling is None
+
+
 def test_set_time_series_scaling_factor_multiplier_requires_function(simple_test_system):
     """Test rejecting an empty PowerSystems scaling function name."""
     generator = simple_test_system.get_component(ThermalStandard, "thermal-standard-test")
