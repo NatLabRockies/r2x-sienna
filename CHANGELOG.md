@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/NatLabRockies/r2x-sienna/compare/v0.4.1...v0.4.2) (2026-08-11)
+
+
+### Bug Fixes
+
+* remove load scaling ([#32](https://github.com/NatLabRockies/r2x-sienna/issues/32)) ([14df215](https://github.com/NatLabRockies/r2x-sienna/commit/14df2150fc795762209d988d9ef452dc9ed9cf04))
+
 ## [0.4.1](https://github.com/NatLabRockies/r2x-sienna/compare/v0.4.0...v0.4.1) (2026-08-10)
 
 
