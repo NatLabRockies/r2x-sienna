@@ -4,7 +4,7 @@ from typing import Annotated, Any
 
 from infrasys.value_curves import InputOutputCurve, LinearCurve
 from pint import Quantity
-from pydantic import Field, NonNegativeFloat, NonPositiveFloat, field_serializer
+from pydantic import Field, NonNegativeFloat, NonPositiveFloat, field_serializer, field_validator
 
 from .core import Device
 from .enums import (
@@ -15,6 +15,7 @@ from .enums import (
 )
 from .named_tuples import Complex, FromTo_ToFrom, MinMax
 from .topology import ACBus, Arc, Area, DCBus
+from r2x_sienna.units import get_magnitude
 
 
 class Branch(Device):
@@ -280,6 +281,14 @@ class ThreeWindingTransformer(Branch):
     base_voltage_tertiary: Annotated[float | None, Field(gt=0, description="Tertiary base voltage in kV")] = (
         None
     )
+
+    @field_validator("base_voltage_primary", "base_voltage_secondary", "base_voltage_tertiary", mode="before")
+    @classmethod
+    def _normalize_zero_base_voltage(cls, value):
+        if get_magnitude(value) == 0:
+            return None
+        return value
+
     g: Annotated[
         float, Field(description="Shunt conductance in pu from star bus to ground (MAG1 in PSS/E)")
     ] = 0.0

@@ -2,13 +2,12 @@
 
 from typing import Annotated
 
-from pint import Quantity
 from pydantic import Field, NonNegativeFloat, PositiveInt, field_validator
 
 from r2x_sienna.models.enums import ACBusTypes
 from r2x_sienna.models.base import SiennaComponent
 from r2x_sienna.models.named_tuples import MinMax
-from r2x_sienna.units import Voltage, ureg
+from r2x_sienna.units import Voltage, get_magnitude, ureg
 
 
 class Topology(SiennaComponent):
@@ -69,7 +68,7 @@ class Bus(Topology):
     @field_validator("base_voltage", mode="before")
     @classmethod
     def _normalize_zero_base_voltage(cls, value):
-        if value == 0 or (isinstance(value, Quantity) and value.magnitude == 0):
+        if get_magnitude(value) == 0:
             return None
         return value
 

@@ -4,6 +4,7 @@ import pytest
 
 from r2x_core.units import set_unit_system, get_unit_system
 from r2x_core.system import System
+from r2x_sienna.models.branch import Transformer3W
 from r2x_sienna.models.topology import ACBus, Area, LoadZone
 from r2x_sienna.models.generators import ThermalStandard
 from r2x_sienna.models.enums import ACBusTypes, ThermalFuels, PrimeMoversType
@@ -45,6 +46,31 @@ class TestSiennaComponent:
         bus = ACBus(name="zero_voltage_bus", number=1, base_voltage=0.0)
 
         assert bus.base_voltage is None
+
+    def test_zero_transformer_base_voltages_are_missing(self):
+        values = Transformer3W.example().model_dump()
+
+        def remove_computed_fields(value):
+            if isinstance(value, dict):
+                value.pop("class_type", None)
+                for nested_value in value.values():
+                    remove_computed_fields(nested_value)
+            elif isinstance(value, list):
+                for nested_value in value:
+                    remove_computed_fields(nested_value)
+
+        remove_computed_fields(values)
+        values.update(
+            base_voltage_primary=0.0,
+            base_voltage_secondary=0.0,
+            base_voltage_tertiary=0.0,
+        )
+
+        transformer = Transformer3W.model_validate(values)
+
+        assert transformer.base_voltage_primary is None
+        assert transformer.base_voltage_secondary is None
+        assert transformer.base_voltage_tertiary is None
 
     def test_thermal_generator_creation(self):
         """Test ThermalStandard generator creation."""
