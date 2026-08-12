@@ -1,9 +1,13 @@
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
+import h5py
+import numpy as np
 import pytest
+from infrasys import Deterministic, SingleTimeSeries, System, TimeSeriesStorageType
 from r2x_core import DataStore, PluginContext
 from rust_ok import Err, Ok
 
@@ -15,6 +19,7 @@ from r2x_sienna import (
 )
 from r2x_sienna.models import (
     ACBus,
+    HydroReservoir,
     MinMax,
     PowerLoad,
     PrimeMoversType,
@@ -31,6 +36,60 @@ from r2x_sienna.serialization import serialize_component_to_psy, serialize_value
 def data_store():
     """Create a DataStore instance for tests."""
     return DataStore()
+
+
+def test_exporter_copies_deterministic_data_to_hdf5(tmp_path: Path):
+    system = System(name="deterministic-export")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    timestamp = datetime(2023, 1, 1, tzinfo=UTC)
+    system.add_time_series(
+        SingleTimeSeries.from_array(
+            data=[0.0] * 8760,
+            name="inflow",
+            resolution=timedelta(hours=1),
+            initial_timestamp=timestamp,
+        ),
+        reservoir,
+    )
+    system.add_time_series(
+        Deterministic.from_array(
+            data=np.zeros((365, 24)),
+            name="inflow",
+            resolution=timedelta(hours=1),
+            initial_timestamp=timestamp,
+            horizon=timedelta(days=1),
+            interval=timedelta(days=1),
+            window_count=365,
+        ),
+        reservoir,
+    )
+
+    manager = system._time_series_mgr
+    target_storage = manager.convert_storage(
+        in_place=False,
+        time_series_storage_type=TimeSeriesStorageType.HDF5,
+    )
+    SiennaExporter._copy_deterministic_time_series(manager, target_storage)
+    manager._storage = target_storage
+    h5_path = tmp_path / "time_series.h5"
+    manager.serialize({}, h5_path, db_name=system.DB_FILENAME)
+    SiennaExporter._patch_time_series_data_attributes(h5_path)
+
+    with h5py.File(h5_path, "r") as h5_file:
+        data_groups = set(h5_file["time_series"])
+        for group in h5_file["time_series"].values():
+            assert group.attrs["type"] == "SingleTimeSeries"
+            assert group.attrs["module"] == "InfrastructureSystems"
+            assert group.attrs["data_type"] == "Float64"
+            assert group["data"].ndim == 1
+    uuids = {
+        row[0]
+        for row in manager._metadata_store._con.execute(
+            "SELECT time_series_uuid FROM time_series_associations"
+        )
+    }
+    assert uuids <= data_groups
 
 
 @pytest.fixture
