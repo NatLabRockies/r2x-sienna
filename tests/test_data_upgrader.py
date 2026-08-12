@@ -23,9 +23,9 @@ from r2x_sienna.upgrader.upgrade_steps import (
 )
 
 
-def test_normalize_initial_timestamp_adds_fractional_seconds() -> None:
-    assert _normalize_initial_timestamp("2023-01-01T00:00:00") == "2023-01-01T00:00:00.0"
-    assert _normalize_initial_timestamp("2023-01-01 00:00:00") == "2023-01-01T00:00:00.0"
+def test_normalize_initial_timestamp_uses_iso_separator() -> None:
+    assert _normalize_initial_timestamp("2023-01-01T00:00:00") == "2023-01-01T00:00:00"
+    assert _normalize_initial_timestamp("2023-01-01 00:00:00") == "2023-01-01T00:00:00"
     assert _normalize_initial_timestamp("2023-01-01T00:00:00.123") == "2023-01-01T00:00:00.123"
 
 

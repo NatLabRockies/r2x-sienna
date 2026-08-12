@@ -36,15 +36,15 @@ def _normalize_initial_timestamp(value: Any) -> Any:
     if value is None:
         return None
     if isinstance(value, datetime):
-        return value.strftime("%Y-%m-%dT%H:%M:%S.%f")
+        return value.isoformat(timespec="auto")
     if not isinstance(value, str):
         return value
 
     match = _INITIAL_TIMESTAMP_RE.match(value.strip())
     if match is None:
         return value
-    fraction = match.group("fraction") or "0"
-    return f"{match.group('date')}T{match.group('time')}.{fraction}"
+    fraction = f".{match.group('fraction')}" if match.group("fraction") else ""
+    return f"{match.group('date')}T{match.group('time')}{fraction}"
 
 
 # Import upgrade_steps at module level to trigger decorator registrations.
