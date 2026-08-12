@@ -4,7 +4,7 @@ These tests verify basic parser instantiation and configuration using
 a minimal test data set.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -83,8 +83,8 @@ def test_parser_adds_default_hydro_reservoir_inflow_series(
 
     parser._ensure_hydro_reservoir_inflow_time_series()
 
-    time_series = system.get_time_series(reservoir)
-    assert time_series.name == reservoir.name
+    time_series = system.get_time_series(reservoir, "inflow")
+    assert time_series.name == "inflow"
     assert len(time_series.data) == 8760
     assert all(value == 0.0 for value in time_series.data)
 
@@ -102,15 +102,40 @@ def test_parser_preserves_existing_hydro_reservoir_time_series(
         data=[1.0] * 8760,
         name="existing_inflow",
         resolution=timedelta(hours=1),
-        initial_timestamp=datetime(year=2029, month=1, day=1),
+        initial_timestamp=datetime(year=2029, month=1, day=1, tzinfo=UTC),
     )
     system.add_time_series(existing_series, reservoir)
     parser._ctx.system = system
 
     parser._ensure_hydro_reservoir_inflow_time_series()
 
-    time_series = system.get_time_series(reservoir)
-    assert time_series.name == "existing_inflow"
+    existing = system.get_time_series(reservoir, "existing_inflow")
+    inflow = system.get_time_series(reservoir, "inflow")
+    assert existing.name == "existing_inflow"
+    assert inflow.name == "inflow"
+
+
+def test_parser_derives_inflow_timestamp_from_existing_series(mock_data_store: Mock):
+    """Missing model_year uses an existing time-series timestamp."""
+    config = SiennaConfig(model_year=None, system_name="test_case")
+    ctx = PluginContext(config=config, store=mock_data_store)
+    parser = SiennaParser.from_context(ctx)
+    system = System(name="hydro-test")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    existing_series = SingleTimeSeries.from_array(
+        data=[1.0] * 8760,
+        name="hydro_budget",
+        resolution=timedelta(hours=1),
+        initial_timestamp=datetime(year=2023, month=1, day=1, tzinfo=UTC),
+    )
+    system.add_time_series(existing_series, reservoir)
+    parser._ctx.system = system
+
+    parser._ensure_hydro_reservoir_inflow_time_series()
+
+    inflow = system.get_time_series(reservoir, "inflow")
+    assert inflow.initial_timestamp == existing_series.initial_timestamp
 
 
 def test_parser_builds_2area_5bus_with_source(data_folder: Path):

@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import time
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO, Any
 from uuid import UUID
@@ -635,19 +635,45 @@ class SiennaParser(Plugin[SiennaConfig]):
         """Create zero inflow series for reservoirs without a time-series association."""
         model_year = self.config.model_year
         if isinstance(model_year, list):
-            model_year = model_year[0] if model_year else 2000
-        model_year = model_year or 2000
+            model_year = model_year[0] if model_year else None
+
+        if model_year is not None:
+            initial_timestamp = datetime(year=model_year, month=1, day=1, tzinfo=UTC)
+        else:
+            timestamp = self.system._time_series_mgr._metadata_store._con.execute(
+                """
+                SELECT initial_timestamp
+                FROM time_series_associations
+                WHERE initial_timestamp IS NOT NULL
+                LIMIT 1
+                """
+            ).fetchone()
+            if timestamp is None:
+                raise ValueError(
+                    "Cannot create HydroReservoir inflow series: model_year is not configured "
+                    "and no existing time-series timestamp is available"
+                )
+            initial_timestamp = datetime.fromisoformat(timestamp[0])
 
         for reservoir in self.system.get_components(HydroReservoir):
-            if self.system.has_time_series(reservoir):
+            association = self.system._time_series_mgr._metadata_store._con.execute(
+                """
+                SELECT 1
+                FROM time_series_associations
+                WHERE owner_uuid = ? AND name = 'inflow'
+                LIMIT 1
+                """,
+                (str(reservoir.uuid),),
+            ).fetchone()
+            if association is not None:
                 continue
 
             self.system.add_time_series(
                 SingleTimeSeries.from_array(
                     data=[0.0] * 8760,
-                    name=reservoir.name,
+                    name="inflow",
                     resolution=timedelta(hours=1),
-                    initial_timestamp=datetime(year=model_year, month=1, day=1),
+                    initial_timestamp=initial_timestamp,
                 ),
                 reservoir,
             )

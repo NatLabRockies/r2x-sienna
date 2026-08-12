@@ -10,11 +10,23 @@ from r2x_sienna import plugins
 from r2x_sienna.logger import timeit
 from r2x_sienna.upgrader import data_upgrader, upgrade_steps
 from r2x_sienna.upgrader.data_upgrader import SiennaUpgrader, SiennaVersionDetector, run_sienna_upgrades
+from r2x_sienna.upgrader.data_upgrader import (
+    SiennaUpgrader,
+    SiennaVersionDetector,
+    _normalize_initial_timestamp,
+    run_sienna_upgrades,
+)
 from r2x_sienna.upgrader.upgrade_steps import (
     _sanitize_geojson_coordinates,
     upgrade_geographic_info,
     upgrade_psy5_schema_fields,
 )
+
+
+def test_normalize_initial_timestamp_adds_fractional_seconds() -> None:
+    assert _normalize_initial_timestamp("2023-01-01T00:00:00") == "2023-01-01T00:00:00.0"
+    assert _normalize_initial_timestamp("2023-01-01 00:00:00") == "2023-01-01T00:00:00.0"
+    assert _normalize_initial_timestamp("2023-01-01T00:00:00.123") == "2023-01-01T00:00:00.123"
 
 
 def test_system_upgrade_preserves_trailing_newline(tmp_path: Path) -> None:
