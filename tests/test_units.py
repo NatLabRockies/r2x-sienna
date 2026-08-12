@@ -41,6 +41,11 @@ class TestSiennaComponent:
         assert bus.load_zone == load_zone
         assert bus.available is True
 
+    def test_zero_base_voltage_is_missing(self):
+        bus = ACBus(name="zero_voltage_bus", number=1, base_voltage=0.0)
+
+        assert bus.base_voltage is None
+
     def test_thermal_generator_creation(self):
         """Test ThermalStandard generator creation."""
         area = Area(name="TestArea")

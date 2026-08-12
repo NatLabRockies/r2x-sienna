@@ -1,7 +1,9 @@
 """Models that capture topology types."""
 
 from typing import Annotated
-from pydantic import Field, NonNegativeFloat, PositiveInt
+
+from pint import Quantity
+from pydantic import Field, NonNegativeFloat, PositiveInt, field_validator
 
 from r2x_sienna.models.enums import ACBusTypes
 from r2x_sienna.models.base import SiennaComponent
@@ -63,6 +65,13 @@ class Bus(Topology):
     magnitude: (
         Annotated[NonNegativeFloat, Field(description="Voltage as a multiple of base_voltage.")] | None
     ) = None
+
+    @field_validator("base_voltage", mode="before")
+    @classmethod
+    def _normalize_zero_base_voltage(cls, value):
+        if value == 0 or (isinstance(value, Quantity) and value.magnitude == 0):
+            return None
+        return value
 
 
 class DCBus(Bus):
