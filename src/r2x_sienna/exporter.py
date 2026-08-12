@@ -40,12 +40,16 @@ def set_time_series_scaling_factor_multiplier(
         SET scaling_factor_multiplier = ?
         WHERE owner_uuid = ?
           AND name = ?
-          AND time_series_type = 'SingleTimeSeries'
+                    AND time_series_type IN (
+                            'SingleTimeSeries',
+                            'Deterministic',
+                            'DeterministicSingleTimeSeries'
+                    )
         """,
         (json.dumps(payload), str(owner.uuid), name),
     ).rowcount
     if not updated:
-        raise ValueError(f"No SingleTimeSeries named '{name}' is attached to {owner.name}")
+                raise ValueError(f"No time series named '{name}' is attached to {owner.name}")
     connection.commit()
 
 

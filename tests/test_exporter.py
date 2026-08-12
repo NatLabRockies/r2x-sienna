@@ -539,6 +539,18 @@ def test_export_assigns_inflow_scaling_factor_multiplier(tmp_path):
         ),
         reservoir,
     )
+    system.add_time_series(
+        Deterministic.from_array(
+            data=np.zeros((365, 24)),
+            name="inflow",
+            resolution=timedelta(hours=1),
+            initial_timestamp=datetime(2029, 1, 1, tzinfo=UTC),
+            horizon=timedelta(days=1),
+            interval=timedelta(days=1),
+            window_count=365,
+        ),
+        reservoir,
+    )
 
     output_file = tmp_path / "hydro.json"
     config = SiennaConfig(
@@ -551,16 +563,21 @@ def test_export_assigns_inflow_scaling_factor_multiplier(tmp_path):
 
     assert output_file.exists()
     connection = system._time_series_mgr._metadata_store._con
-    scaling = connection.execute(
+    scaling_rows = connection.execute(
         """
-        SELECT scaling_factor_multiplier
+        SELECT time_series_type, scaling_factor_multiplier
         FROM time_series_associations
         WHERE owner_uuid = ? AND name = 'inflow'
+        ORDER BY time_series_type
         """,
         (str(reservoir.uuid),),
-    ).fetchone()[0]
+    ).fetchall()
     expected = {"__metadata__": {"module": "PowerSystems", "function": "get_inflow"}}
-    assert json.loads(scaling) == expected
+    assert {row[0] for row in scaling_rows} == {
+        "Deterministic",
+        "SingleTimeSeries",
+    }
+    assert all(json.loads(row[1]) == expected for row in scaling_rows)
 
 
 def test_export_preserves_missing_time_series_scaling_factor(infrasys_test_system, tmp_path):
@@ -604,7 +621,7 @@ def test_set_time_series_scaling_factor_multiplier_requires_function(simple_test
 def test_set_time_series_scaling_factor_multiplier_requires_series(simple_test_system):
     """Test requiring the selected time series to exist on the component."""
     generator = simple_test_system.get_component(ThermalStandard, "thermal-standard-test")
-    with pytest.raises(ValueError, match="No SingleTimeSeries named 'max_active_power'"):
+    with pytest.raises(ValueError, match="No time series named 'max_active_power'"):
         exporter_mod.set_time_series_scaling_factor_multiplier(
             simple_test_system,
             generator,
