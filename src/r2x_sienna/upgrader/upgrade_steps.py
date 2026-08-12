@@ -371,8 +371,9 @@ def upgrade_hydro_pumped_storage(system_data: dict[str, Any]) -> dict[str, Any]:
 
         ext = comp.get("ext", {})
 
-        head_uuid = str(uuid.uuid4())
+        head_uuid = comp["internal"]["uuid"]["value"]
         tail_uuid = str(uuid.uuid4())
+        pump_turbine_uuid = str(uuid.uuid4())
         head_reservoir = {
             "__metadata__": {"type": "HydroReservoir", "module": "PowerSystems"},
             "name": f"{comp['name']}_HeadReservoir",
@@ -438,7 +439,7 @@ def upgrade_hydro_pumped_storage(system_data: dict[str, Any]) -> dict[str, Any]:
             "prime_mover_type": comp.get("prime_mover_type"),
             "services": ext.get("services", []),
             "dynamic_injector": ext.get("dynamic_injector"),
-            "internal": comp.get("internal", {}),
+            "internal": {"uuid": {"value": pump_turbine_uuid}},
             "ext": ext,
         }
 

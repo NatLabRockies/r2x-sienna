@@ -4,13 +4,15 @@ These tests verify basic parser instantiation and configuration using
 a minimal test data set.
 """
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
-from r2x_core import DataStore, PluginContext
+from infrasys import SingleTimeSeries
+from r2x_core import DataStore, PluginContext, System
 
-from r2x_sienna.models import Source
+from r2x_sienna.models import HydroReservoir, Source
 from r2x_sienna.parser import SiennaParser
 from r2x_sienna.plugin_config import SiennaConfig
 
@@ -66,6 +68,49 @@ def test_parser_system_access(sienna_config: SiennaConfig, mock_data_store: Mock
     # System should raise PluginError when not set in context
     with pytest.raises(PluginError, match="System not provided"):
         _ = parser.system
+
+
+def test_parser_adds_default_hydro_reservoir_inflow_series(
+    sienna_config: SiennaConfig, mock_data_store: Mock
+):
+    """Reservoirs created during PSY4-to-PSY5 upgrades get a default inflow series."""
+    ctx = PluginContext(config=sienna_config, store=mock_data_store)
+    parser = SiennaParser.from_context(ctx)
+    system = System(name="hydro-test")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    parser._ctx.system = system
+
+    parser._ensure_hydro_reservoir_inflow_time_series()
+
+    time_series = system.get_time_series(reservoir)
+    assert time_series.name == reservoir.name
+    assert len(time_series.data) == 8760
+    assert all(value == 0.0 for value in time_series.data)
+
+
+def test_parser_preserves_existing_hydro_reservoir_time_series(
+    sienna_config: SiennaConfig, mock_data_store: Mock
+):
+    """Existing reservoir series are not replaced by the default series."""
+    ctx = PluginContext(config=sienna_config, store=mock_data_store)
+    parser = SiennaParser.from_context(ctx)
+    system = System(name="hydro-test")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    existing_series = SingleTimeSeries.from_array(
+        data=[1.0] * 8760,
+        name="existing_inflow",
+        resolution=timedelta(hours=1),
+        initial_timestamp=datetime(year=2029, month=1, day=1),
+    )
+    system.add_time_series(existing_series, reservoir)
+    parser._ctx.system = system
+
+    parser._ensure_hydro_reservoir_inflow_time_series()
+
+    time_series = system.get_time_series(reservoir)
+    assert time_series.name == "existing_inflow"
 
 
 def test_parser_builds_2area_5bus_with_source(data_folder: Path):

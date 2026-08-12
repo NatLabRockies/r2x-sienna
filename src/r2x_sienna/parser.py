@@ -5,12 +5,13 @@ import shutil
 import tempfile
 import time
 from collections import defaultdict
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import IO, Any
 from uuid import UUID
 
 import h5py
-from infrasys import Component
+from infrasys import Component, SingleTimeSeries
 from infrasys.h5_time_series_storage import HDF5TimeSeriesStorage
 from infrasys.serialization import (
     TYPE_METADATA,
@@ -30,6 +31,7 @@ from r2x_core import Plugin, System, create_component
 from rust_ok import Err, Ok, Result
 
 from r2x_sienna.models.enums import ReserveDirection, ReserveType
+from r2x_sienna.models.generators import HydroReservoir
 from r2x_sienna.models.services import VariableReserve
 
 from .plugin_config import SiennaConfig
@@ -117,6 +119,7 @@ class SiennaParser(Plugin[SiennaConfig]):
             self._parse_components()
             self._parse_supplemental_attributes()
             self._h5_manager()
+            self._ensure_hydro_reservoir_inflow_time_series()
 
             elapsed = time.perf_counter() - t0
             component_count = sum(1 for _ in system._component_mgr.iter_all())
@@ -627,6 +630,27 @@ class SiennaParser(Plugin[SiennaConfig]):
 
         except Exception as e:  # noqa: BLE001
             logger.error("Failed to load time series data: {}", e)
+
+    def _ensure_hydro_reservoir_inflow_time_series(self) -> None:
+        """Create zero inflow series for reservoirs without a time-series association."""
+        model_year = self.config.model_year
+        if isinstance(model_year, list):
+            model_year = model_year[0] if model_year else 2000
+        model_year = model_year or 2000
+
+        for reservoir in self.system.get_components(HydroReservoir):
+            if self.system.has_time_series(reservoir):
+                continue
+
+            self.system.add_time_series(
+                SingleTimeSeries.from_array(
+                    data=[0.0] * 8760,
+                    name=reservoir.name,
+                    resolution=timedelta(hours=1),
+                    initial_timestamp=datetime(year=model_year, month=1, day=1),
+                ),
+                reservoir,
+            )
 
 
 def create_temporary_h5_storage(source_h5_path):
