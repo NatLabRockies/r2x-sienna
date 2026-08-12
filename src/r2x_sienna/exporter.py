@@ -12,6 +12,7 @@ from loguru import logger
 from r2x_core import Plugin
 from rust_ok import Err, Ok, Result
 
+from r2x_sienna.models import HydroReservoir
 from r2x_sienna.serialization import serialize_component_to_psy
 
 from .plugin_config import SiennaExporterConfig
@@ -326,6 +327,13 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
             logger.debug("Converting time series storage to HDF5")
             t0 = time.perf_counter()
             time_series_manager = self.system._time_series_mgr
+            for reservoir in self.system.get_components(HydroReservoir):
+                set_time_series_scaling_factor_multiplier(
+                    self.system,
+                    reservoir,
+                    "inflow",
+                    "get_inflow",
+                )
             h5_storage = time_series_manager.convert_storage(
                 in_place=False,
                 time_series_storage_type=TimeSeriesStorageType.HDF5,

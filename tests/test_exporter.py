@@ -525,6 +525,44 @@ def test_set_time_series_scaling_factor_multiplier(infrasys_test_system):
     assert load_scaling is None
 
 
+def test_export_assigns_inflow_scaling_factor_multiplier(tmp_path):
+    """Exported HydroReservoir inflow series use the PowerSystems getter."""
+    system = System(name="hydro-inflow-scaling")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    system.add_time_series(
+        SingleTimeSeries.from_array(
+            data=[0.0] * 8760,
+            name="inflow",
+            resolution=timedelta(hours=1),
+            initial_timestamp=datetime(2029, 1, 1, tzinfo=UTC),
+        ),
+        reservoir,
+    )
+
+    output_file = tmp_path / "hydro.json"
+    config = SiennaConfig(
+        model_year=2029,
+        system_name="hydro-inflow-scaling",
+        scenario="test",
+        output_path=str(output_file),
+    )
+    SiennaExporter.from_context(PluginContext(config=config, system=system)).run()
+
+    assert output_file.exists()
+    connection = system._time_series_mgr._metadata_store._con
+    scaling = connection.execute(
+        """
+        SELECT scaling_factor_multiplier
+        FROM time_series_associations
+        WHERE owner_uuid = ? AND name = 'inflow'
+        """,
+        (str(reservoir.uuid),),
+    ).fetchone()[0]
+    expected = {"__metadata__": {"module": "PowerSystems", "function": "get_inflow"}}
+    assert json.loads(scaling) == expected
+
+
 def test_export_preserves_missing_time_series_scaling_factor(infrasys_test_system, tmp_path):
     """Test that export does not assign a scaling function to raw load time series."""
     load = next(iter(infrasys_test_system.get_components(PowerLoad)))
