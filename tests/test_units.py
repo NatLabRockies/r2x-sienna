@@ -1,15 +1,15 @@
 """Tests for per-unit functionality in Sienna components."""
 
 import pytest
-
-from r2x_core.units import set_unit_system, get_unit_system
 from r2x_core.system import System
-from r2x_sienna.models.branch import Transformer3W
-from r2x_sienna.models.topology import ACBus, Area, LoadZone
-from r2x_sienna.models.generators import ThermalStandard
-from r2x_sienna.models.enums import ACBusTypes, ThermalFuels, PrimeMoversType
-from r2x_sienna.models.named_tuples import MinMax, UpDown
+from r2x_core.units import get_unit_system, set_unit_system
+
+from r2x_sienna.models.branch import Transformer2W, Transformer3W
 from r2x_sienna.models.costs import ThermalGenerationCost
+from r2x_sienna.models.enums import ACBusTypes, PrimeMoversType, ThermalFuels
+from r2x_sienna.models.generators import ThermalStandard
+from r2x_sienna.models.named_tuples import MinMax, UpDown
+from r2x_sienna.models.topology import ACBus, Area, LoadZone
 from r2x_sienna.units import ureg
 
 
@@ -71,6 +71,13 @@ class TestSiennaComponent:
         assert transformer.base_voltage_primary == 0.0
         assert transformer.base_voltage_secondary == 0.0
         assert transformer.base_voltage_tertiary == 0.0
+
+    def test_three_winding_transformer_primary_voltage_defaults_to_zero(self):
+        assert Transformer3W.model_fields["base_voltage_primary"].default == 0.0
+
+    def test_two_winding_transformer_base_voltages_default_to_zero(self):
+        assert Transformer2W.model_fields["base_voltage_primary"].default == 0.0
+        assert Transformer2W.model_fields["base_voltage_secondary"].default == 0.0
 
     def test_thermal_generator_creation(self):
         """Test ThermalStandard generator creation."""
