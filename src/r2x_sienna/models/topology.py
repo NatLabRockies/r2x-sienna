@@ -2,12 +2,12 @@
 
 from typing import Annotated
 
-from pydantic import Field, NonNegativeFloat, PositiveInt, field_validator
+from pydantic import Field, NonNegativeFloat, PositiveInt
 
 from r2x_sienna.models.enums import ACBusTypes
 from r2x_sienna.models.base import SiennaComponent
 from r2x_sienna.models.named_tuples import MinMax
-from r2x_sienna.units import Voltage, get_magnitude, ureg
+from r2x_sienna.units import Voltage, ureg
 
 
 class Topology(SiennaComponent):
@@ -58,19 +58,12 @@ class Bus(Topology):
     load_zone: Annotated[LoadZone, Field(description="the load zone containing the DC bus.")] | None = None
     voltage_limits: Annotated[MinMax, Field(description="the voltage limits")] | None = None
     base_voltage: (
-        Annotated[Voltage, Field(gt=0, description="Base voltage in kV. Unit compatible with voltage.")]
+        Annotated[Voltage, Field(ge=0, description="Base voltage in kV. Unit compatible with voltage.")]
         | None
     ) = None
     magnitude: (
         Annotated[NonNegativeFloat, Field(description="Voltage as a multiple of base_voltage.")] | None
     ) = None
-
-    @field_validator("base_voltage", mode="before")
-    @classmethod
-    def _normalize_zero_base_voltage(cls, value):
-        if get_magnitude(value) == 0:
-            return None
-        return value
 
 
 class DCBus(Bus):

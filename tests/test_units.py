@@ -42,12 +42,12 @@ class TestSiennaComponent:
         assert bus.load_zone == load_zone
         assert bus.available is True
 
-    def test_zero_base_voltage_is_missing(self):
+    def test_zero_base_voltage_is_preserved(self):
         bus = ACBus(name="zero_voltage_bus", number=1, base_voltage=0.0)
 
-        assert bus.base_voltage is None
+        assert bus.base_voltage == 0.0
 
-    def test_zero_transformer_base_voltages_are_missing(self):
+    def test_zero_transformer_base_voltages_are_preserved(self):
         values = Transformer3W.example().model_dump()
 
         def remove_computed_fields(value):
@@ -68,9 +68,9 @@ class TestSiennaComponent:
 
         transformer = Transformer3W.model_validate(values)
 
-        assert transformer.base_voltage_primary is None
-        assert transformer.base_voltage_secondary is None
-        assert transformer.base_voltage_tertiary is None
+        assert transformer.base_voltage_primary == 0.0
+        assert transformer.base_voltage_secondary == 0.0
+        assert transformer.base_voltage_tertiary == 0.0
 
     def test_thermal_generator_creation(self):
         """Test ThermalStandard generator creation."""
