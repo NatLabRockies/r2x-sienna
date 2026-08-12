@@ -8,8 +8,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
-from infrasys import SingleTimeSeries
+from infrasys import Deterministic, SingleTimeSeries
 from r2x_core import DataStore, PluginContext, System
 
 from r2x_sienna.models import HydroReservoir, Source
@@ -136,6 +137,50 @@ def test_parser_derives_inflow_timestamp_from_existing_series(mock_data_store: M
 
     inflow = system.get_time_series(reservoir, "inflow")
     assert inflow.initial_timestamp == existing_series.initial_timestamp
+
+
+def test_parser_adds_deterministic_inflow_when_system_has_deterministic_series(
+    sienna_config: SiennaConfig, mock_data_store: Mock
+):
+    """Missing reservoir inflow gets both series types when forecasts are present."""
+    ctx = PluginContext(config=sienna_config, store=mock_data_store)
+    parser = SiennaParser.from_context(ctx)
+    system = System(name="hydro-test")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    system.add_time_series(
+        Deterministic.from_array(
+            data=np.ones((365, 24)),
+            name="hydro_budget",
+            resolution=timedelta(hours=1),
+            initial_timestamp=datetime(year=2029, month=1, day=1, tzinfo=UTC),
+            horizon=timedelta(days=1),
+            interval=timedelta(days=1),
+            window_count=365,
+        ),
+        reservoir,
+    )
+    system._time_series_mgr._metadata_store._con.execute(
+        "UPDATE time_series_associations SET time_series_type = 'DeterministicSingleTimeSeries'"
+    )
+    parser._ctx.system = system
+
+    parser._ensure_hydro_reservoir_inflow_time_series()
+
+    con = system._time_series_mgr._metadata_store._con
+    rows = con.execute(
+        """
+        SELECT time_series_type
+        FROM time_series_associations
+        WHERE owner_uuid = ? AND name = 'inflow'
+        ORDER BY time_series_type
+        """,
+        (str(reservoir.uuid),),
+    ).fetchall()
+    assert {row[0] for row in rows} == {
+        "Deterministic",
+        "SingleTimeSeries",
+    }
 
 
 def test_parser_builds_2area_5bus_with_source(data_folder: Path):

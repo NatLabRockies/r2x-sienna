@@ -11,7 +11,8 @@ from typing import IO, Any
 from uuid import UUID
 
 import h5py
-from infrasys import Component, SingleTimeSeries
+import numpy as np
+from infrasys import Component, Deterministic, SingleTimeSeries
 from infrasys.h5_time_series_storage import HDF5TimeSeriesStorage
 from infrasys.serialization import (
     TYPE_METADATA,
@@ -621,6 +622,9 @@ class SiennaParser(Plugin[SiennaConfig]):
             t0 = time.perf_counter()
             storage = create_temporary_h5_storage(h5_path)
             conn = storage.get_metadata_store()
+            from r2x_sienna.upgrader.data_upgrader import _repair_deterministic_metadata_periods
+
+            _repair_deterministic_metadata_periods(conn)
             metadata_store = TimeSeriesMetadataStore(con=conn, initialize=False)
             conn.commit()
             metadata_store._load_metadata_into_memory()
@@ -633,6 +637,7 @@ class SiennaParser(Plugin[SiennaConfig]):
 
     def _ensure_hydro_reservoir_inflow_time_series(self) -> None:
         """Create zero inflow series for reservoirs without a time-series association."""
+        deterministic_types = {"Deterministic", "DeterministicSingleTimeSeries"}
         model_year = self.config.model_year
         if isinstance(model_year, list):
             model_year = model_year[0] if model_year else None
@@ -655,25 +660,51 @@ class SiennaParser(Plugin[SiennaConfig]):
                 )
             initial_timestamp = datetime.fromisoformat(timestamp[0])
 
-        for reservoir in self.system.get_components(HydroReservoir):
-            association = self.system._time_series_mgr._metadata_store._con.execute(
+        deterministic_exists = (
+            self.system._time_series_mgr._metadata_store._con.execute(
                 """
                 SELECT 1
                 FROM time_series_associations
-                WHERE owner_uuid = ? AND name = 'inflow'
+                WHERE time_series_type IN ('Deterministic', 'DeterministicSingleTimeSeries')
                 LIMIT 1
+                """
+            ).fetchone()
+            is not None
+        )
+
+        for reservoir in self.system.get_components(HydroReservoir):
+            associations = self.system._time_series_mgr._metadata_store._con.execute(
+                """
+                SELECT time_series_type
+                FROM time_series_associations
+                WHERE owner_uuid = ? AND name = 'inflow'
                 """,
                 (str(reservoir.uuid),),
-            ).fetchone()
-            if association is not None:
+            ).fetchall()
+            association_types = {row[0] for row in associations}
+            if "SingleTimeSeries" not in association_types:
+                self.system.add_time_series(
+                    SingleTimeSeries.from_array(
+                        data=[0.0] * 8760,
+                        name="inflow",
+                        resolution=timedelta(hours=1),
+                        initial_timestamp=initial_timestamp,
+                    ),
+                    reservoir,
+                )
+
+            if not deterministic_exists or association_types & deterministic_types:
                 continue
 
             self.system.add_time_series(
-                SingleTimeSeries.from_array(
-                    data=[0.0] * 8760,
+                Deterministic.from_array(
+                    data=np.zeros((365, 24)),
                     name="inflow",
                     resolution=timedelta(hours=1),
                     initial_timestamp=initial_timestamp,
+                    horizon=timedelta(days=1),
+                    interval=timedelta(days=1),
+                    window_count=365,
                 ),
                 reservoir,
             )
