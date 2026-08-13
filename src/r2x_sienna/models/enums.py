@@ -1,6 +1,6 @@
 """Enumerations for Sienna model components."""
 
-from enum import StrEnum, Enum
+from enum import Enum, StrEnum
 
 
 class ReserveType(StrEnum):

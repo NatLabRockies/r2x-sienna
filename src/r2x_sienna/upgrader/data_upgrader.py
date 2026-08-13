@@ -1,8 +1,9 @@
 import json
 import re
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 from uuid import uuid4
 
 from loguru import logger
@@ -260,7 +261,7 @@ class SiennaUpgrader:
                     system_data = step.func(system_data)
                     modified = True
                     steps_run += 1
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error("Upgrade step {} failed: {}", step.name, e)
                     return Err(f"Failed {step.name}: {e}")
                 current_version = step.target_version
@@ -719,7 +720,7 @@ def _upgrade_h5_time_series_metadata(h5_path: Path) -> Result[bool, str]:
             h5f.create_dataset(H5_METADATA_KEY, data=np.frombuffer(tmp_path.read_bytes(), dtype=np.uint8))
         logger.info("Upgraded legacy time series metadata schema in {}", h5_path)
         return Ok(True)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return Err(f"Failed to upgrade time series metadata in {h5_path}: {e}")
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -824,7 +825,7 @@ def run_sienna_upgrades(
     if json_path_resolved is not None:
         try:
             h5_path = _resolve_time_series_h5_path(json_path_resolved)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return Err(f"Failed to inspect JSON for time series metadata upgrade: {e}")
         if h5_path and h5_path.exists():
             h5_upgrade = _upgrade_h5_time_series_metadata(h5_path)

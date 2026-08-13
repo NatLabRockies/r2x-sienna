@@ -29,7 +29,7 @@ class InputOutput(InfraSysBaseModel):
     output: float
 
 
-class FromTo_ToFrom(InfraSysBaseModel):  # noqa: N801
+class FromTo_ToFrom(InfraSysBaseModel):
     from_to: float | Quantity
     to_from: float | Quantity
 

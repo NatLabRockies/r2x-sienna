@@ -15,12 +15,12 @@ config = SiennaConfig
 __all__ = [
     # Classes
     "SiennaConfig",
-    "SiennaParser",
     "SiennaExporter",
+    "SiennaParser",
     "SiennaUpgrader",
     "SiennaVersionDetector",
     # Plugin references
     "config",
-    "parser",
     "exporter",
+    "parser",
 ]

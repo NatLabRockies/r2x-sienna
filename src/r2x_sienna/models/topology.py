@@ -1,10 +1,11 @@
 """Models that capture topology types."""
 
 from typing import Annotated
+
 from pydantic import Field, NonNegativeFloat, PositiveInt
 
-from r2x_sienna.models.enums import ACBusTypes
 from r2x_sienna.models.base import SiennaComponent
+from r2x_sienna.models.enums import ACBusTypes
 from r2x_sienna.models.named_tuples import MinMax
 from r2x_sienna.units import Voltage, ureg
 

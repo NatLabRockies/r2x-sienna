@@ -69,7 +69,7 @@ class GeometricDistributionForcedOutage(SupplementalAttribute):
 
     mean_time_to_recovery: float = 0.0
     outage_transition_probability: float = 0.0
-    internal: dict = {}
+    internal: dict = Field(default_factory=dict)
 
     @classmethod
     def example(cls) -> "GeometricDistributionForcedOutage":
@@ -127,7 +127,7 @@ class EmissionsData(SupplementalAttribute):
     mass_unit: MassUnit = MassUnit.KG
     gwp: Annotated[float, Field(default=1.0, ge=0.0)] = 1.0
     available: bool = True
-    ext: dict[str, Any] = {}
+    ext: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("emission_rate", mode="before")
     @classmethod
@@ -153,11 +153,8 @@ class EmissionsData(SupplementalAttribute):
                 raise ValueError(
                     f"energy_unit must be MMBTU or GJ when basis is FUEL_INPUT, got {self.energy_unit}"
                 )
-        elif self.basis == EmissionBasis.POWER_OUTPUT:
-            if self.energy_unit != EnergyUnit.MWH:
-                raise ValueError(
-                    f"energy_unit must be MWH when basis is POWER_OUTPUT, got {self.energy_unit}"
-                )
+        elif self.basis == EmissionBasis.POWER_OUTPUT and self.energy_unit != EnergyUnit.MWH:
+            raise ValueError(f"energy_unit must be MWH when basis is POWER_OUTPUT, got {self.energy_unit}")
         return self
 
     @classmethod

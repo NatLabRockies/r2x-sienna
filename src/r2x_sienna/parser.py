@@ -127,14 +127,14 @@ class SiennaParser(Plugin[SiennaConfig]):
                 component_count,
             )
             return Ok(system)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return Err(f"Failed to build system: {e}")
 
     def _require_config(self) -> SiennaConfig:
         """Return the parser config with a concrete type check."""
         config = self.config
         if not isinstance(config, SiennaConfig):
-            raise ValueError("SiennaParser requires a SiennaConfig instance")
+            raise TypeError("SiennaParser requires a SiennaConfig instance")
         return config
 
     def _parse_components(self) -> None:
@@ -208,10 +208,10 @@ class SiennaParser(Plugin[SiennaConfig]):
         if isinstance(obj, dict):
             current_internal = obj.pop("internal", {})
             current_uuid = current_internal.get("uuid", {}).get("value", {})
-            if "from" in obj.keys() or "to" in obj.keys():
+            if "from" in obj or "to" in obj:
                 obj["from_to"] = obj.pop("from")
                 obj["to_from"] = obj.pop("to")
-            if "in" in obj.keys() or "out" in obj.keys():
+            if "in" in obj or "out" in obj:
                 obj["input"] = obj.pop("in")
                 obj["output"] = obj.pop("out")
 
@@ -440,7 +440,7 @@ class SiennaParser(Plugin[SiennaConfig]):
 
         if skipped_types:
             msg = f"Bug: still have types remaining to be deserialized: {skipped_types.keys()}"
-            raise Exception(msg)
+            raise RuntimeError(msg)
 
     def _try_deserialize_component(self, component: dict[str, Any], cached_types: CachedTypeHelper) -> Any:
         values = self._deserialize_fields(component, cached_types)
@@ -625,7 +625,7 @@ class SiennaParser(Plugin[SiennaConfig]):
             self.system._time_series_mgr = mgr
             logger.info("HDF5 time series loaded in {:.2f}s", time.perf_counter() - t0)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Failed to load time series data: {}", e)
 
 
@@ -649,11 +649,10 @@ def create_temporary_h5_storage(source_h5_path):
     dest_h5_path = temp_dir / HDF5TimeSeriesStorage.STORAGE_FILE
     logger.trace("Copying HDF5 from {} to temp {}", source_h5_path, dest_h5_path)
     t0 = time.perf_counter()
-    with h5py.File(source_h5_path, "r") as src_file:
-        with h5py.File(dest_h5_path, "w") as dest_file:
-            for key in src_file.keys():
-                src_file.copy(key, dest_file)
-            logger.trace("Copied {} HDF5 groups to temp storage", len(list(src_file.keys())))
+    with h5py.File(source_h5_path, "r") as src_file, h5py.File(dest_h5_path, "w") as dest_file:
+        for key in src_file:
+            src_file.copy(key, dest_file)
+        logger.trace("Copied {} HDF5 groups to temp storage", len(list(src_file.keys())))
 
     logger.debug("Created temporary HDF5 storage at {} in {:.2f}s", temp_dir, time.perf_counter() - t0)
     storage = HDF5TimeSeriesStorage(directory=temp_dir)

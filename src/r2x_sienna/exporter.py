@@ -1,7 +1,8 @@
-import time
 import json
+import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 from uuid import uuid4
 
 import orjson
@@ -247,7 +248,7 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
             logger.debug("Creating output directory: {}", self.output_path.parent)
             try:
                 self.output_path.parent.mkdir(parents=True, exist_ok=True)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 return Err(f"Failed to create output directory: {e}")
 
         return Ok(None)
@@ -314,7 +315,7 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
 
             logger.info("Export complete in {:.2f}s", time.perf_counter() - t0)
             return Ok(None)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Failed to export system: {}", e)
             return Err(f"Export failed: {e}")
 
@@ -488,9 +489,9 @@ def to_psy(
 
     result = exporter.on_validate()
     if result.is_err():
-        raise Exception(f"Validation failed: {result.err()}")
+        raise RuntimeError(f"Validation failed: {result.err()}")
 
     result = exporter.on_export()
     if result.is_err():
-        raise Exception(f"Export failed: {result.err()}")
+        raise RuntimeError(f"Export failed: {result.err()}")
     return result
