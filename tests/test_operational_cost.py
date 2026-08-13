@@ -1,6 +1,7 @@
 import pytest
 from infrasys.cost_curves import CostCurve, FuelCurve, UnitSystem
 from infrasys.value_curves import LinearCurve
+
 from r2x_sienna.models.costs import (
     HydroGenerationCost,
     LoadCost,
@@ -65,7 +66,7 @@ def test_default_fields():
 
 
 def test_load_cost_requires_variable():
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         LoadCost()  # type: ignore[call-arg]
 
 

@@ -77,6 +77,7 @@ def test_emissions_data_example():
 def test_emissions_data_scalar_coercion():
     """Scalar float emission_rate is coerced to a LinearCurve."""
     from infrasys.value_curves import InputOutputCurve
+
     from r2x_sienna.models.attributes import EmissionsData
     from r2x_sienna.models.enums import EmissionBasis, EnergyUnit, PollutantType
 
@@ -93,6 +94,7 @@ def test_emissions_data_scalar_coercion():
 def test_emissions_data_fuel_input_valid_energy_units():
     """FUEL_INPUT basis accepts MMBTU and GJ energy units."""
     from infrasys.value_curves import LinearCurve
+
     from r2x_sienna.models.attributes import EmissionsData
     from r2x_sienna.models.enums import EmissionBasis, EnergyUnit, PollutantType
 
@@ -112,6 +114,7 @@ def test_emissions_data_invalid_basis_energy_unit():
     import pytest
     from infrasys.value_curves import LinearCurve
     from pydantic import ValidationError
+
     from r2x_sienna.models.attributes import EmissionsData
     from r2x_sienna.models.enums import EmissionBasis, EnergyUnit, PollutantType
 
@@ -130,6 +133,7 @@ def test_emissions_data_negative_gwp_rejected():
     import pytest
     from infrasys.value_curves import LinearCurve
     from pydantic import ValidationError
+
     from r2x_sienna.models.attributes import EmissionsData
     from r2x_sienna.models.enums import EmissionBasis, EnergyUnit, PollutantType
 

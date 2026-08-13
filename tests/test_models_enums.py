@@ -1,10 +1,10 @@
 """Tests for Sienna model enumerations."""
 
 from r2x_sienna.models.enums import (
-    ReserveType,
-    ReserveDirection,
-    ReservoirDataType,
     ACBusTypes,
+    ReserveDirection,
+    ReserveType,
+    ReservoirDataType,
 )
 
 

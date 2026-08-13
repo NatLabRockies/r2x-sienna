@@ -1,12 +1,12 @@
 import pytest
 from pint import Quantity
 
-from r2x_sienna.models.generators import ThermalStandard
-from r2x_sienna.models.enums import PrimeMoversType, ThermalFuels
-from r2x_sienna.models.topology import ACBus
 from r2x_sienna.models.costs import ThermalGenerationCost
+from r2x_sienna.models.enums import PrimeMoversType, ThermalFuels
+from r2x_sienna.models.generators import ThermalStandard
 from r2x_sienna.models.getters import _get_multiplier, get_max_active_power, get_ramp_limits, get_value
 from r2x_sienna.models.named_tuples import MinMax, UpDown
+from r2x_sienna.models.topology import ACBus
 from r2x_sienna.units import get_magnitude
 
 
