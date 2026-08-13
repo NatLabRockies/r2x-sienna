@@ -13,6 +13,7 @@ from uuid import UUID
 import h5py
 import numpy as np
 from infrasys import Component, Deterministic, SingleTimeSeries
+from infrasys.exceptions import ISNotStored
 from infrasys.h5_time_series_storage import HDF5TimeSeriesStorage
 from infrasys.serialization import (
     TYPE_METADATA,
@@ -630,10 +631,32 @@ class SiennaParser(Plugin[SiennaConfig]):
             metadata_store._load_metadata_into_memory()
             mgr = TimeSeriesManager(con=conn, storage=storage, metadata_store=metadata_store)
             self.system._time_series_mgr = mgr
+            self._filter_hydro_reservoir_max_active_power()
             logger.info("HDF5 time series loaded in {:.2f}s", time.perf_counter() - t0)
 
         except Exception as e:  # noqa: BLE001
             logger.error("Failed to load time series data: {}", e)
+
+    def _filter_hydro_reservoir_max_active_power(self) -> None:
+        """Remove unsupported max_active_power series from hydro reservoirs."""
+        metadata_store = self.system._time_series_mgr._metadata_store
+        removed = 0
+        for reservoir in self.system.get_components(HydroReservoir):
+            try:
+                removed += len(
+                    metadata_store.remove(
+                        reservoir,
+                        name="max_active_power",
+                    )
+                )
+            except ISNotStored:
+                continue
+
+        if removed:
+            logger.info(
+                "Filtered {} max_active_power time series from HydroReservoir components",
+                removed,
+            )
 
     def _ensure_hydro_reservoir_inflow_time_series(self) -> None:
         """Create zero inflow series for reservoirs without a time-series association."""

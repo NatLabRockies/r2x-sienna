@@ -11,6 +11,7 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from infrasys import Deterministic, SingleTimeSeries
+from infrasys.exceptions import ISNotStored
 from r2x_core import DataStore, PluginContext, System
 
 from r2x_sienna.models import HydroReservoir, Source
@@ -114,6 +115,42 @@ def test_parser_preserves_existing_hydro_reservoir_time_series(
     inflow = system.get_time_series(reservoir, "inflow")
     assert existing.name == "existing_inflow"
     assert inflow.name == "inflow"
+
+
+def test_parser_filters_hydro_reservoir_max_active_power(
+    sienna_config: SiennaConfig, mock_data_store: Mock
+):
+    """Reservoirs do not retain the unsupported max_active_power series."""
+    ctx = PluginContext(config=sienna_config, store=mock_data_store)
+    parser = SiennaParser.from_context(ctx)
+    system = System(name="hydro-test")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    system.add_time_series(
+        SingleTimeSeries.from_array(
+            data=[1.0] * 8760,
+            name="max_active_power",
+            resolution=timedelta(hours=1),
+            initial_timestamp=datetime(year=2029, month=1, day=1, tzinfo=UTC),
+        ),
+        reservoir,
+    )
+    system.add_time_series(
+        SingleTimeSeries.from_array(
+            data=[2.0] * 8760,
+            name="inflow",
+            resolution=timedelta(hours=1),
+            initial_timestamp=datetime(year=2029, month=1, day=1, tzinfo=UTC),
+        ),
+        reservoir,
+    )
+    parser._ctx.system = system
+
+    parser._filter_hydro_reservoir_max_active_power()
+
+    with pytest.raises(ISNotStored):
+        system.get_time_series(reservoir, "max_active_power")
+    assert system.get_time_series(reservoir, "inflow").name == "inflow"
 
 
 def test_parser_derives_inflow_timestamp_from_existing_series(mock_data_store: Mock):
