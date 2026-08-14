@@ -5,6 +5,7 @@ from infrasys import System
 from infrasys.cost_curves import FuelCurve, UnitSystem
 from infrasys.function_data import XYCoords
 from infrasys.value_curves import LinearCurve
+from pydantic import ValidationError
 
 from r2x_sienna.exporter import to_psy
 from r2x_sienna.models import (
@@ -13,8 +14,10 @@ from r2x_sienna.models import (
     Complex,
     FromTo_ToFrom,
     InputOutput,
+    Line,
     MinMax,
     PrimeMoversType,
+    StartUpStages,
     ThermalFuels,
     ThermalGenerationCost,
     ThermalStandard,
@@ -219,6 +222,54 @@ def test_psy_parametric_serialization():
     assert "__metadata__" in result
     assert result["__metadata__"]["module"] == "PowerSystems"
     assert result["__metadata__"]["type"] == "ThermalGenerationCost"
+
+
+def test_psy_serialization_with_staged_startup_cost():
+    """ThermalGenerationCost.start_up can be serialized as hot/warm/cold staging."""
+    cost = ThermalGenerationCost(
+        start_up=StartUpStages(hot=100.0, warm=150.0, cold=250.0),
+        shut_down=50.0,
+        fixed=0.0,
+    )
+
+    result = serialize_value(cost, "operation_cost")
+    assert result is not None
+    assert isinstance(result, dict)
+    assert result["start_up"] == {"hot": 100.0, "warm": 150.0, "cold": 250.0}
+
+
+def test_line_accepts_signed_flow_values():
+    """PSY Line uses Float64 for flows, so signed values must be accepted."""
+    bus_1 = ACBus(name="line_test_bus_1", number=1001)
+    bus_2 = ACBus(name="line_test_bus_2", number=1002)
+    line = Line(
+        name="line_signed_flow",
+        arc=Arc(from_to=bus_1, to_from=bus_2),
+        r=0.01,
+        x=0.10,
+        rating=100.0,
+        active_power_flow=-20.0,
+        reactive_power_flow=-5.0,
+        angle_limits=MinMax(min=-0.5, max=0.5),
+    )
+
+    assert line.active_power_flow == -20.0
+    assert line.reactive_power_flow == -5.0
+
+
+def test_line_requires_impedance_and_rating_fields():
+    """Line should require PSY mandatory electrical fields."""
+    bus_1 = ACBus(name="line_required_bus_1", number=1003)
+    bus_2 = ACBus(name="line_required_bus_2", number=1004)
+
+    with pytest.raises(ValidationError):
+        Line(
+            name="line_missing_fields",
+            arc=Arc(from_to=bus_1, to_from=bus_2),
+            active_power_flow=0.0,
+            reactive_power_flow=0.0,
+            angle_limits=MinMax(min=-0.5, max=0.5),
+        )
 
 
 def test_serialize_nested_component():

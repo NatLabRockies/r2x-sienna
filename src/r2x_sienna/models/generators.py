@@ -607,6 +607,10 @@ class EnergyReservoirStorage(Storage):
             description="Base power of the unit (MVA) for per unitization.",
         ),
     ]
+    operation_cost: Annotated[
+        StorageCost | MarketBidCost,
+        Field(description="Operational cost of storage."),
+    ] = StorageCost()
     conversion_factor: Annotated[
         float,
         Field(

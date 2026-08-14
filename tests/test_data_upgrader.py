@@ -13,6 +13,7 @@ from r2x_sienna.upgrader.data_upgrader import SiennaUpgrader, SiennaVersionDetec
 from r2x_sienna.upgrader.upgrade_steps import (
     _sanitize_geojson_coordinates,
     upgrade_geographic_info,
+    upgrade_psy5_schema_fields,
 )
 
 
@@ -203,6 +204,100 @@ def test_upgrade_step_helpers_for_refs_and_branches() -> None:
     assert upgrade_steps._get_ref_uuid({"value": "abc"}) == "abc"
     assert upgrade_steps._get_ref_uuid({"__metadata__": {"uuid": "def"}}) == "def"
     assert upgrade_steps._get_ref_uuid("bad") is None
+
+
+def test_upgrade_psy5_schema_fields_normalizes_only_required_fields() -> None:
+    system_data = {
+        "data": {
+            "components": [
+                {
+                    "__metadata__": {"type": "PowerLoad"},
+                    "name": "pl1",
+                    "comformity": "CONFORMING",
+                },
+                {
+                    "__metadata__": {"type": "TransmissionInterface"},
+                    "name": "if1",
+                    "active_power_flow_limits": {"min": -100.0, "max": 100.0},
+                    "direction_mapping": {},
+                },
+                {
+                    "__metadata__": {"type": "TapTransformer"},
+                    "name": "tap1",
+                },
+                {
+                    "__metadata__": {"type": "TModelHVDCLine"},
+                    "name": "dc1",
+                    "rating_up": 300.0,
+                    "rating_down": -250.0,
+                    "resistance": 0.01,
+                    "inductance": 0.02,
+                    "capacitance": 0.03,
+                },
+                {
+                    "__metadata__": {"type": "TwoTerminalVSCLine"},
+                    "name": "vsc1",
+                    "dc_voltage_control_from": True,
+                    "dc_voltage_control_to": False,
+                    "ac_voltage_control_from": False,
+                    "ac_voltage_control_to": True,
+                },
+                {
+                    "__metadata__": {"type": "InterconnectingConverter"},
+                    "name": "ipc1",
+                },
+                {
+                    "__metadata__": {"type": "SwitchedAdmittance"},
+                    "name": "sa1",
+                },
+                {
+                    "__metadata__": {"type": "EnergyReservoirStorage"},
+                    "name": "st1",
+                },
+            ]
+        }
+    }
+
+    upgraded = upgrade_psy5_schema_fields(system_data)
+    comps = upgraded["data"]["components"]
+
+    pl = next(c for c in comps if c.get("__metadata__", {}).get("type") == "PowerLoad")
+    assert pl["conformity"] == "CONFORMING"
+
+    iface = next(c for c in comps if c.get("__metadata__", {}).get("type") == "TransmissionInterface")
+    assert iface["violation_penalty"] == 1e30
+
+    tap = next(c for c in comps if c.get("__metadata__", {}).get("type") == "TapTransformer")
+    assert "tap_limits" not in tap
+    assert "number_of_tap_positions" not in tap
+    assert "regulated_bus_number" not in tap
+    assert "voltage_setpoint" not in tap
+
+    tmodel = next(c for c in comps if c.get("__metadata__", {}).get("type") == "TModelHVDCLine")
+    assert "r" not in tmodel
+    assert "l" not in tmodel
+    assert "c" not in tmodel
+    assert "active_power_limits_from" not in tmodel
+    assert "active_power_limits_to" not in tmodel
+
+    vsc = next(c for c in comps if c.get("__metadata__", {}).get("type") == "TwoTerminalVSCLine")
+    assert "dc_control_from" not in vsc
+    assert "dc_control_to" not in vsc
+    assert "ac_control_from" not in vsc
+    assert "ac_control_to" not in vsc
+    assert "rmpct_from" not in vsc
+    assert "rmpct_to" not in vsc
+
+    ipc = next(c for c in comps if c.get("__metadata__", {}).get("type") == "InterconnectingConverter")
+    assert "max_dc_current" not in ipc
+    assert "dc_control" not in ipc
+
+    sa = next(c for c in comps if c.get("__metadata__", {}).get("type") == "SwitchedAdmittance")
+    assert "control_mode" not in sa
+    assert "regulated_bus_number" not in sa
+
+    ers = next(c for c in comps if c.get("__metadata__", {}).get("type") == "EnergyReservoirStorage")
+    assert "operation_cost" not in ers
 
 
 def test_upgrade_step_helpers_for_transformers() -> None:

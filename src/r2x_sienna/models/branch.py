@@ -40,10 +40,10 @@ class MonitoredLine(ACBranch):
     b: Annotated[FromTo_ToFrom | None, Field(description="Shunt susceptance in pu")] = None
     g: Annotated[FromTo_ToFrom | None, Field(description="Shunt conductance in pu")] = None
     active_power_flow: Annotated[
-        NonNegativeFloat, Field(description="Initial condition of active power flow on the line (MW)")
+        float, Field(description="Initial condition of active power flow on the line (MW)")
     ] = 0.0
     reactive_power_flow: Annotated[
-        NonNegativeFloat, Field(description="Initial condition of reactive power flow on the line (MVAR)")
+        float, Field(description="Initial condition of reactive power flow on the line (MVAR)")
     ] = 0.0
     flow_limits: Annotated[
         FromTo_ToFrom | None,
@@ -90,12 +90,15 @@ class MonitoredLine(ACBranch):
 class Line(ACBranch):
     """Class representing an AC transmission line."""
 
+    r: Annotated[float, Field(description="Resistance of the branch")]
+    x: Annotated[float, Field(description="Reactance of the branch")]
+    rating: Annotated[float, Field(ge=0, description="Thermal rating of the line.")]
     b: Annotated[FromTo_ToFrom | None, Field(description="Shunt susceptance in pu")] = None
     g: Annotated[FromTo_ToFrom | None, Field(description="Shunt conductance in pu")] = None
     rating_b: Annotated[float, Field(description="Second thermal rating of the line.")] | None = None
     rating_c: Annotated[float, Field(description="Third thermal rating of the line.")] | None = None
-    active_power_flow: NonNegativeFloat
-    reactive_power_flow: NonNegativeFloat
+    active_power_flow: float
+    reactive_power_flow: float
     angle_limits: MinMax
 
     @classmethod
@@ -103,6 +106,8 @@ class Line(ACBranch):
         return Line(
             name="ExampleLine",
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
+            r=0.01,
+            x=0.05,
             rating=100,
             rating_b=120,
             rating_c=150,
@@ -482,6 +487,10 @@ class TapTransformer(TwoWindingTransformer):
             ),
         ),
     ]
+    tap_limits: MinMax = MinMax(min=0.9, max=1.1)
+    number_of_tap_positions: Annotated[int, Field(ge=1, description="Number of discrete tap positions")] = 33
+    regulated_bus_number: Annotated[int, Field(description="Regulated bus number (0 means local). ")] = 0
+    voltage_setpoint: Annotated[float, Field(description="Voltage setpoint at regulated bus in p.u.")] = 1.0
 
     @classmethod
     def example(cls) -> "TapTransformer":
@@ -559,6 +568,13 @@ class AreaInterchange(Branch):
 
 class TModelHVDCLine(DCBranch):
     """Class representing a DC transmission line."""
+
+    active_power_flow: float = 0.0
+    r: Annotated[float, Field(description="Total series resistance in p.u.")] = 0.0
+    l: Annotated[float, Field(description="Total series inductance in p.u.")] = 0.0
+    c: Annotated[float, Field(description="Shunt capacitance in p.u.")] = 0.0
+    active_power_limits_from: MinMax = MinMax(min=0.0, max=0.0)
+    active_power_limits_to: MinMax = MinMax(min=0.0, max=0.0)
 
     rating_up: Annotated[NonNegativeFloat, Field(description="Forward rating of the line.")] | None = None
     rating_down: Annotated[NonPositiveFloat, Field(description="Reverse rating of the line.")] | None = None
@@ -810,6 +826,12 @@ class TwoTerminalVSCLine(TwoTerminalHVDCLine):
             )
         ),
     ] = True
+    dc_control_from: Annotated[str, Field(description="DC-side control mode for from converter")] = (
+        "DC_VOLTAGE"
+    )
+    ac_control_from: Annotated[str, Field(description="AC-side control mode for from converter")] = (
+        "AC_VOLTAGE"
+    )
     ac_voltage_control_from: Annotated[
         bool,
         Field(
@@ -866,6 +888,9 @@ class TwoTerminalVSCLine(TwoTerminalHVDCLine):
     voltage_limits_from: (
         Annotated[MinMax, Field(description="Limits on the Voltage at the DC from Bus in per unit")] | None
     ) = None
+    dc_voltage_droop_from: Annotated[float, Field(description="DC voltage droop gain for from converter")] = (
+        0.0
+    )
     reactive_power_to: Annotated[
         float, Field(description="Initial condition of reactive power flowing into the to-bus")
     ] = 0.0
@@ -878,6 +903,8 @@ class TwoTerminalVSCLine(TwoTerminalHVDCLine):
             )
         ),
     ] = True
+    dc_control_to: Annotated[str, Field(description="DC-side control mode for to converter")] = "DC_VOLTAGE"
+    ac_control_to: Annotated[str, Field(description="AC-side control mode for to converter")] = "AC_VOLTAGE"
     ac_voltage_control_to: Annotated[
         bool,
         Field(
@@ -931,6 +958,16 @@ class TwoTerminalVSCLine(TwoTerminalHVDCLine):
     voltage_limits_to: (
         Annotated[MinMax, Field(description="Limits on the Voltage at the DC to Bus")] | None
     ) = None
+    dc_voltage_droop_to: Annotated[float, Field(description="DC voltage droop gain for to converter")] = 0.0
+    rated_dc_voltage: Annotated[float, Field(description="Rated DC voltage of the link in kV")] = 0.0
+    remote_bus_control_from: Annotated[
+        int, Field(description="Remote AC bus number for from-side control")
+    ] = 0
+    remote_bus_control_to: Annotated[int, Field(description="Remote AC bus number for to-side control")] = 0
+    rmpct_from: Annotated[float, Field(description="Reactive support participation percent from-side")] = (
+        100.0
+    )
+    rmpct_to: Annotated[float, Field(description="Reactive support participation percent to-side")] = 100.0
 
     @classmethod
     def example(cls) -> "TwoTerminalVSCLine":

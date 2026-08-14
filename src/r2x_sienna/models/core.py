@@ -1,7 +1,7 @@
 """Core models for r2x-sienna."""
 
 from collections import defaultdict
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field
 
@@ -29,6 +29,11 @@ class Device(SiennaComponent):
 
 class StaticInjection(Device):
     """Supertype for all static injection devices."""
+
+    dynamic_injector: Annotated[
+        Any | None,
+        Field(description="Corresponding dynamic injection device."),
+    ] = None
 
 
 class DynamicInjection(SiennaComponent):

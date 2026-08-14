@@ -11,6 +11,12 @@ Top-level exports from `r2x_sienna`:
 - `SiennaUpgrader`
 - `SiennaVersionDetector`
 
+Compatibility note:
+
+- The packaged `r2x_sienna.models` definitions are maintained to match current
+	`PowerSystems.jl` schemas for overlapping model names, with backward-compatible aliases used where
+	practical to avoid breaking existing inputs.
+
 ## Parser
 
 ### `SiennaConfig`

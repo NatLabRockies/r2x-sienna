@@ -7,7 +7,7 @@ from infrasys.models import InfraSysBaseModel
 from infrasys.value_curves import InputOutputCurve
 from pint import Quantity
 
-from r2x_sienna.models import Arc, Complex, FromTo_ToFrom, InputOutput, MinMax, UpDown
+from r2x_sienna.models import Arc, Complex, FromTo_ToFrom, InputOutput, MinMax, StartUpStages, UpDown
 from r2x_sienna.models.costs import OperationalCost
 from r2x_sienna.parser import PARAMETRIZED_TYPES
 
@@ -51,6 +51,11 @@ def _(value: InputOutput, field: str = "") -> dict[str, Any]:
 
 
 @serialize_value.register
+def _(value: StartUpStages, field: str = "") -> dict[str, Any]:
+    return {"hot": value.hot, "warm": value.warm, "cold": value.cold}
+
+
+@serialize_value.register
 def _(value: Complex, field: str = "") -> dict[str, Any]:
     return {"real": value.real, "imag": value.imag}
 
@@ -82,6 +87,9 @@ def _serialize_parametric_object(obj: InfraSysBaseModel) -> dict[str, Any]:
 
     for key in obj.model_fields_set:
         attribute = getattr(obj, key)
+        if isinstance(attribute, StartUpStages):
+            output_dict[key] = serialize_value(attribute, key)
+            continue
 
         if isinstance(attribute, InfraSysBaseModel):
             if key in PARAMETRIZED_OUTPUT_TYPES:

@@ -76,3 +76,33 @@
 - Models are strongly typed and validated via `pydantic`.
 - Base component classes include per-unit-aware behavior and shared serialization patterns.
 - The parser relies on model metadata to resolve component references and deserialize polymorphic types.
+
+## PSY Compatibility Highlights
+
+Recent model updates align `r2x_sienna.models` with current `PowerSystems.jl` generated schemas for
+overlapping component names.
+
+- Thermal cost:
+  `ThermalGenerationCost.start_up` accepts either scalar or staged startup values (`StartUpStages`).
+- AC branch flows:
+  `Line` and `MonitoredLine` active/reactive flow fields accept signed values.
+- Line requirements:
+  `Line` enforces required electrical fields (`r`, `x`, `rating`) for PSY-style construction.
+- Static injection linkage:
+  static-injection models support optional `dynamic_injector` linkage to dynamic models.
+- Load conformity naming:
+  load models use canonical `conformity`; legacy input key `comformity` remains accepted as an alias.
+- FACTS and switched-admittance controls:
+  control/regulated-bus/reactive-limit fields are represented in `FACTSControlDevice` and
+  `SwitchedAdmittance`.
+- HVDC and converter controls:
+  VSC and converter control fields (setpoints, control modes, droop, remote bus control metadata) are
+  modeled for PSY interoperability.
+- T-model HVDC representation:
+  PSY-style `r`, `l`, `c`, active flow, and directional active-power limits are available in
+  `TModelHVDCLine`.
+- Interface services:
+  `TransmissionInterface` includes `violation_penalty`.
+
+These updates are additive where possible and preserve existing parse/export behavior expected by
+`r2x-sienna` users.

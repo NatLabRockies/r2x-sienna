@@ -56,3 +56,21 @@ A custom `usd` unit is registered in the shared unit registry.
 - You can build components in scripts using explicit units (for example, `138 * ureg.kV`).
 - Validation catches unit/type mismatches early in model construction.
 - Export output remains aligned with PSY-style numeric payload expectations.
+
+## PSY Schema Sync Policy
+
+`r2x-sienna` tracks the `PowerSystems.jl` model library for overlapping component names.
+
+- Alignment target:
+	generated PSY model fields and serialization shape for static component data.
+- Compatibility strategy:
+	prefer additive updates (new optional fields and aliases) over breaking removals.
+- Legacy ingestion:
+	where historical `r2x-sienna` payloads differ (for example, misspelled keys), parsers keep
+	backward-compatible aliases when feasible.
+- Export behavior:
+	serialization continues to emit PSY-compatible structures, including nested startup-stage thermal
+	cost payloads and branch/HVDC field naming expected by PSY.
+
+This approach keeps parse/export interoperability current while minimizing migration overhead for
+existing datasets and scripts.
