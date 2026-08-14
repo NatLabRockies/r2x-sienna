@@ -1,9 +1,10 @@
 import pytest
 from r2x_core.system import System
-from r2x_sienna.models import Area, ACBus, ThermalStandard
+
+from r2x_sienna.models import ACBus, Area, ThermalStandard
+from r2x_sienna.models.costs import ThermalGenerationCost
 from r2x_sienna.models.enums import PrimeMoversType, ThermalFuels
 from r2x_sienna.models.named_tuples import MinMax
-from r2x_sienna.models.costs import ThermalGenerationCost
 
 
 @pytest.fixture(scope="class")

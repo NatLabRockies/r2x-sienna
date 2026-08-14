@@ -7,7 +7,7 @@ from infrasys.cost_curves import CostCurve, FuelCurve, UnitSystem
 from infrasys.function_data import PiecewiseStepData
 from infrasys.models import InfraSysBaseModel
 from infrasys.time_series_models import TimeSeriesKey
-from infrasys.value_curves import LinearCurve, IncrementalCurve
+from infrasys.value_curves import IncrementalCurve, LinearCurve
 from pydantic import Field, NonNegativeFloat, computed_field, model_validator
 
 from .core import Service
@@ -25,9 +25,10 @@ class OperationalCost(InfraSysBaseModel):
     @property
     def variable_type(self) -> str | None:
         """Create attribute that holds the class name."""
-        if not getattr(self, "variable", None):
+        variable = getattr(self, "variable", None)
+        if not variable:
             return None
-        return type(getattr(self, "variable")).__name__
+        return type(variable).__name__
 
     @computed_field  # type: ignore[prop-decorator]
     @property

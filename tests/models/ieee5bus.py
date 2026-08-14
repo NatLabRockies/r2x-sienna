@@ -1,17 +1,15 @@
 """Script that creates simple systems for testing."""
 
 import pathlib
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from infrasys.cost_curves import FuelCurve, UnitSystem
 from infrasys.function_data import LinearFunctionData
 from infrasys.time_series_models import SingleTimeSeries
 from infrasys.value_curves import InputOutputCurve
-
 from r2x_core.system import System
-from r2x_sienna.plugin_config import SiennaConfig
+
 from r2x_sienna.exporter import to_psy
-from r2x_sienna.models.enums import PrimeMoversType, StorageTechs, ThermalFuels
 from r2x_sienna.models import (
     ACBus,
     Arc,
@@ -25,6 +23,8 @@ from r2x_sienna.models import (
     ThermalStandard,
 )
 from r2x_sienna.models.costs import ThermalGenerationCost
+from r2x_sienna.models.enums import PrimeMoversType, StorageTechs, ThermalFuels
+from r2x_sienna.plugin_config import SiennaConfig
 from r2x_sienna.units import Energy, Percentage, Time, ureg
 
 
@@ -54,9 +54,9 @@ def ieee5bus() -> System:
         system.add_component(bus)
 
     # Solar generators
-    initial_time = datetime(year=2012, month=1, day=1)
+    initial_time = datetime(year=2012, month=1, day=1, tzinfo=UTC)
     ts = SingleTimeSeries.from_array(
-        data=list(range(0, 8760)),
+        data=list(range(8760)),
         initial_timestamp=initial_time,
         resolution=timedelta(hours=1),
         name="rated_capacity",

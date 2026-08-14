@@ -2,15 +2,14 @@
 
 import json
 import pathlib
-from datetime import datetime, timedelta
-from typing import Any, Type, TypeVar
+from datetime import UTC, datetime, timedelta
+from typing import Any, TypeVar
 
 from infrasys.cost_curves import CostCurve, UnitSystem
 from infrasys.time_series_models import SingleTimeSeries
 from infrasys.value_curves import LinearCurve
 from r2x_core.system import System
 
-from r2x_sienna.plugin_config import SiennaConfig
 from r2x_sienna.exporter import to_psy
 from r2x_sienna.models import (
     ACBus,
@@ -31,11 +30,12 @@ from r2x_sienna.models import (
 )
 from r2x_sienna.models.costs import RenewableGenerationCost, ThermalGenerationCost
 from r2x_sienna.models.enums import ACBusTypes, PrimeMoversType, ReserveDirection, ReserveType, ThermalFuels
+from r2x_sienna.plugin_config import SiennaConfig
 
 T = TypeVar("T")
 
 
-def get_enum_from_string(value: str, enum_class: Type[T]) -> T:
+def get_enum_from_string(value: str, enum_class: type[T]) -> T:
     """Get enum value from string, case-insensitive."""
     for enum_value in enum_class:
         if enum_value.value.lower() == value.lower():
@@ -209,7 +209,7 @@ def pjm_2area() -> System:
     system.add_component(wind_01)
 
     # Add renewable profiles
-    initial_timestamp = datetime(year=2024, month=1, day=1)
+    initial_timestamp = datetime(year=2024, month=1, day=1, tzinfo=UTC)
     solar_array = pjm_2area_components["solar_ts"]
     wind_array = pjm_2area_components["wind_ts"]
     solar_ts = SingleTimeSeries.from_array(
@@ -224,11 +224,10 @@ def pjm_2area() -> System:
         resolution=timedelta(hours=1),
         name="rated_capacity",
     )
-    #
     system.add_time_series(solar_ts, solar_pv_01)
     system.add_time_series(wind_ts, wind_01)
 
-    initial_timestamp = datetime(year=2024, month=1, day=1)
+    initial_timestamp = datetime(year=2024, month=1, day=1, tzinfo=UTC)
     for load in pjm_2area_components["load"]:
         load_component = PowerLoad(
             name=load["BusName"],

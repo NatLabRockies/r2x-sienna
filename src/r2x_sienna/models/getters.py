@@ -1,13 +1,13 @@
 from functools import singledispatch
-from typing import Any, Union
+from typing import Any, TypeAlias
 
 from pint import Quantity
 
 from r2x_sienna.models.generators import (
     HydroDispatch,
     HydroEnergyReservoir,
-    HydroPumpTurbine,
     HydroPumpedStorage,
+    HydroPumpTurbine,
     HydroTurbine,
     ThermalMultiStart,
     ThermalStandard,
@@ -48,15 +48,15 @@ def get_max_active_power(component) -> float:
     raise TypeError(msg)
 
 
-GeneratorsWithActivePowerLimits = Union[
-    ThermalStandard,
-    ThermalMultiStart,
-    HydroDispatch,
-    HydroEnergyReservoir,
-    HydroPumpedStorage,
-    HydroTurbine,
-    HydroPumpTurbine,
-]
+GeneratorsWithActivePowerLimits: TypeAlias = (
+    ThermalStandard
+    | ThermalMultiStart
+    | HydroDispatch
+    | HydroEnergyReservoir
+    | HydroPumpedStorage
+    | HydroTurbine
+    | HydroPumpTurbine
+)
 
 
 @get_max_active_power.register
@@ -70,15 +70,15 @@ def get_ramp_limits(component) -> UpDown:
     raise TypeError(msg)
 
 
-GeneratorsWithRampLimits = Union[
-    ThermalStandard,
-    HydroDispatch,
-    ThermalMultiStart,
-    HydroEnergyReservoir,
-    HydroPumpedStorage,
-    HydroTurbine,
-    HydroPumpTurbine,
-]
+GeneratorsWithRampLimits: TypeAlias = (
+    ThermalStandard
+    | HydroDispatch
+    | ThermalMultiStart
+    | HydroEnergyReservoir
+    | HydroPumpedStorage
+    | HydroTurbine
+    | HydroPumpTurbine
+)
 
 
 @get_ramp_limits.register

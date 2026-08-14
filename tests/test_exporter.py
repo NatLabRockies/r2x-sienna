@@ -7,12 +7,12 @@ import pytest
 from r2x_core import DataStore, PluginContext
 from rust_ok import Err, Ok
 
+import r2x_sienna.exporter as exporter_mod
 from r2x_sienna import (
     SiennaConfig,
     SiennaExporter,
     SiennaParser,
 )
-import r2x_sienna.exporter as exporter_mod
 from r2x_sienna.models import (
     ACBus,
     MinMax,
@@ -121,19 +121,20 @@ def single_bus_system_with_geoinfo():
     """Create a minimal system with one bus (GeographicInfo SA), one generator (GeometricDistributionForcedOutage SA),
     and one transformer (ImpedanceCorrectionData SA)."""
     from infrasys import System
+    from infrasys.base_quantity import ureg
+
     from r2x_sienna.models import (
         ACBus,
         Arc,
         Area,
-        LoadZone,
         GeographicInfo,
         GeometricDistributionForcedOutage,
         ImpedanceCorrectionData,
+        LoadZone,
         Transformer2W,
     )
-    from r2x_sienna.models.named_tuples import Complex, MinMax
     from r2x_sienna.models.enums import ACBusTypes
-    from infrasys.base_quantity import ureg
+    from r2x_sienna.models.named_tuples import Complex, MinMax
 
     system = System()
     system.name = "single_bus_geo_system"

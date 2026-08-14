@@ -11,8 +11,8 @@ import pytest
 from r2x_core import DataStore, PluginContext
 
 from r2x_sienna.models import Source
-from r2x_sienna.plugin_config import SiennaConfig
 from r2x_sienna.parser import SiennaParser
+from r2x_sienna.plugin_config import SiennaConfig
 
 
 @pytest.fixture
@@ -122,6 +122,7 @@ class TestDeserializeComponentsNested:
         import json
         import tempfile
         from pathlib import Path
+
         from r2x_core import DataStore, PluginContext, System
 
         # Create minimal Sienna JSON with:

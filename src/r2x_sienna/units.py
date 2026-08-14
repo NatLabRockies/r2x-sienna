@@ -1,6 +1,6 @@
 """R2X pint units."""
 
-from infrasys.base_quantity import ureg, BaseQuantity
+from infrasys.base_quantity import BaseQuantity, ureg
 from pint import Quantity
 
 ureg.define("usd = []")

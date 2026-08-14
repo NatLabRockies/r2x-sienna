@@ -1,24 +1,19 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from r2x_core import UpgradeStep, UpgradeType
+from rust_ok import Err, Ok
 
-from r2x_sienna.upgrader.data_upgrader import SiennaUpgrader
+from r2x_sienna import plugins
+from r2x_sienna.logger import timeit
+from r2x_sienna.upgrader import data_upgrader, upgrade_steps
+from r2x_sienna.upgrader.data_upgrader import SiennaUpgrader, SiennaVersionDetector, run_sienna_upgrades
 from r2x_sienna.upgrader.upgrade_steps import (
     _sanitize_geojson_coordinates,
     upgrade_geographic_info,
 )
-
-from types import SimpleNamespace
-
-from rust_ok import Err, Ok
-
-import r2x_sienna.plugins as plugins
-import r2x_sienna.upgrader.data_upgrader as data_upgrader
-import r2x_sienna.upgrader.upgrade_steps as upgrade_steps
-from r2x_sienna.logger import timeit
-from r2x_sienna.upgrader.data_upgrader import SiennaVersionDetector, run_sienna_upgrades
 
 
 def test_system_upgrade_preserves_trailing_newline(tmp_path: Path) -> None:

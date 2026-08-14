@@ -8,8 +8,8 @@ import pytest
 from infrasys import System
 from r2x_core import DataStore, PluginContext
 
-from r2x_sienna.plugin_config import SiennaConfig
 from r2x_sienna.parser import SiennaParser
+from r2x_sienna.plugin_config import SiennaConfig
 
 
 @pytest.fixture

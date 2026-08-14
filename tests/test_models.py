@@ -6,7 +6,6 @@ from infrasys.cost_curves import FuelCurve, UnitSystem
 from infrasys.function_data import XYCoords
 from infrasys.value_curves import LinearCurve
 
-from r2x_sienna.plugin_config import SiennaConfig
 from r2x_sienna.exporter import to_psy
 from r2x_sienna.models import (
     ACBus,
@@ -21,6 +20,7 @@ from r2x_sienna.models import (
     ThermalStandard,
     UpDown,
 )
+from r2x_sienna.plugin_config import SiennaConfig
 from r2x_sienna.serialization import _serialize_parametric_object, serialize_component_to_psy, serialize_value
 
 

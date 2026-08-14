@@ -6,8 +6,8 @@ from infrasys.value_curves import InputOutputCurve, LinearCurve
 from pydantic import Field, NonNegativeFloat
 from r2x_core import Unit
 
-from r2x_sienna.models.costs import LoadCost, MarketBidCost
 from r2x_sienna.models.core import DynamicInjection, StaticInjection
+from r2x_sienna.models.costs import LoadCost, MarketBidCost
 from r2x_sienna.models.enums import FACTSOperationModes, LoadConformity, MotorLoadTechnology
 from r2x_sienna.models.named_tuples import Complex, MinMax
 from r2x_sienna.models.topology import ACBus, Bus, DCBus
