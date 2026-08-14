@@ -1,4 +1,5 @@
 import json
+from unittest.mock import Mock
 
 import pytest
 from infrasys import System
@@ -23,6 +24,7 @@ from r2x_sienna.models import (
     ThermalStandard,
     UpDown,
 )
+from r2x_sienna.models.branch import PhaseShiftingTransformer, PhaseShiftingTransformer3W
 from r2x_sienna.plugin_config import SiennaConfig
 from r2x_sienna.serialization import _serialize_parametric_object, serialize_component_to_psy, serialize_value
 
@@ -96,6 +98,38 @@ def test_get_component_output_fields():
     fields = set(ThermalStandard.model_fields.keys())
     assert isinstance(fields, set)
     assert len(fields) > 0
+
+
+@pytest.mark.parametrize("angle", [-1.571, 1.571])
+def test_acbus_rejects_angles_at_validation_bounds(angle):
+    """AC bus angles must be strictly inside the valid +/- pi/2 bounds."""
+    with pytest.raises(ValueError):
+        ACBus(name="boundary_angle_bus", number=1, angle=angle)
+
+
+@pytest.mark.parametrize(
+    "transformer_type, angle_fields",
+    [
+        (PhaseShiftingTransformer, ["α"]),
+        (PhaseShiftingTransformer3W, ["α_primary", "α_secondary", "α_tertiary"]),
+    ],
+)
+def test_phase_shifting_transformer_warns_for_out_of_range_angles(
+    monkeypatch, transformer_type, angle_fields
+):
+    """Phase-shifting transformer angles are retained while warning when out of range."""
+    transformer = transformer_type.example()
+    values = transformer.model_dump(exclude_computed_fields=True)
+    for field in angle_fields:
+        values[field] = 2.0
+
+    warning = Mock()
+    monkeypatch.setattr("r2x_sienna.models.branch.logger.warning", warning)
+    validated = transformer_type.model_validate(values)
+
+    assert all(getattr(validated, field) == 2.0 for field in angle_fields)
+    assert warning.call_count == len(angle_fields)
+    assert all("outside the valid range" in call.args[0] for call in warning.call_args_list)
 
 
 def test_to_psy_serialization(sienna_config, infrasys_test_system, tmp_path):
