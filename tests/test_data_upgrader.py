@@ -9,7 +9,6 @@ from rust_ok import Err, Ok
 from r2x_sienna import plugins
 from r2x_sienna.logger import timeit
 from r2x_sienna.upgrader import data_upgrader, upgrade_steps
-from r2x_sienna.upgrader.data_upgrader import SiennaUpgrader, SiennaVersionDetector, run_sienna_upgrades
 from r2x_sienna.upgrader.data_upgrader import (
     SiennaUpgrader,
     SiennaVersionDetector,

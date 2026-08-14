@@ -49,7 +49,7 @@ def set_time_series_scaling_factor_multiplier(
         (json.dumps(payload), str(owner.uuid), name),
     ).rowcount
     if not updated:
-                raise ValueError(f"No time series named '{name}' is attached to {owner.name}")
+        raise ValueError(f"No time series named '{name}' is attached to {owner.name}")
     connection.commit()
 
 
@@ -397,9 +397,7 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
         metadata_store = time_series_manager._metadata_store
         source_storage = time_series_manager._storage
         for time_series_uuid in metadata_store.unique_uuids_by_type("Deterministic"):
-            metadata = metadata_store.list_metadata_with_time_series_uuid(
-                time_series_uuid, limit=1
-            )
+            metadata = metadata_store.list_metadata_with_time_series_uuid(time_series_uuid, limit=1)
             if len(metadata) != 1:
                 raise RuntimeError(
                     f"Expected one metadata row for deterministic time series {time_series_uuid}, "
