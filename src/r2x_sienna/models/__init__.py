@@ -114,9 +114,7 @@ from .services import (
 from .topology import ACBus, Arc, Area, Bus, DCBus, LoadZone
 
 __all__ = [
-    # branch
     "ACBranch",
-    # topology
     "ACBus",
     "ACBusTypes",
     "ActiveConstantPowerLoad",
@@ -125,28 +123,22 @@ __all__ = [
     "AreaInterchange",
     "Branch",
     "Bus",
-    # named_tuples
     "Complex",
-    # services
     "ConstantReserveNonSpinning",
     "DCBranch",
     "DCBus",
     "DiscreteControlledACBranch",
-    # enums
     "DiscreteControlledBranchStatus",
     "DiscreteControlledBranchType",
     "EmissionBasis",
-    # attributes
     "EmissionsData",
     "EnergyReservoirStorage",
     "EnergyUnit",
     "ExponentialLoad",
     "FACTSControlDevice",
     "FACTSOperationModes",
-    # load
     "FixedAdmittance",
     "FromTo_ToFrom",
-    # generators
     "Generator",
     "GeoLocation",
     "GeographicInfo",
@@ -155,7 +147,6 @@ __all__ = [
     "HydroDispatch",
     "HydroEnergyReservoir",
     "HydroGen",
-    # costs
     "HydroGenerationCost",
     "HydroPumpTurbine",
     "HydroPumpedStorage",
@@ -191,7 +182,6 @@ __all__ = [
     "ReserveDirection",
     "ReserveMap",
     "ReserveNonSpinning",
-    # core
     "ReserveType",
     "ReservoirDataType",
     "ReservoirLocation",
