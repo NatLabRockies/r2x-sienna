@@ -1,8 +1,7 @@
 """Core models for r2x-sienna."""
 
 from collections import defaultdict
-from typing import Any
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field
 

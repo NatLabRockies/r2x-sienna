@@ -695,9 +695,12 @@ def upgrade_psy5_schema_fields(system_data: dict[str, Any]) -> dict[str, Any]:
         comp_type = comp.get("__metadata__", {}).get("type")
 
         # Load conformity typo compatibility from older payloads.
-        if comp_type in {"PowerLoad", "StandardLoad", "InterruptiblePowerLoad"}:
-            if "conformity" not in comp and "comformity" in comp:
-                comp["conformity"] = comp.get("comformity")
+        if (
+            comp_type in {"PowerLoad", "StandardLoad", "InterruptiblePowerLoad"}
+            and "conformity" not in comp
+            and "comformity" in comp
+        ):
+            comp["conformity"] = comp.get("comformity")
 
         # Interface penalty introduced in newer PSY schema.
         if comp_type == "TransmissionInterface":

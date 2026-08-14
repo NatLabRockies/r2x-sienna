@@ -571,7 +571,7 @@ class TModelHVDCLine(DCBranch):
 
     active_power_flow: float = 0.0
     r: Annotated[float, Field(description="Total series resistance in p.u.")] = 0.0
-    l: Annotated[float, Field(description="Total series inductance in p.u.")] = 0.0  # noqa: E741
+    l: Annotated[float, Field(description="Total series inductance in p.u.")] = 0.0
     c: Annotated[float, Field(description="Shunt capacitance in p.u.")] = 0.0
     active_power_limits_from: MinMax = MinMax(min=0.0, max=0.0)
     active_power_limits_to: MinMax = MinMax(min=0.0, max=0.0)

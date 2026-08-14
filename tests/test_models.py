@@ -5,6 +5,7 @@ from infrasys import System
 from infrasys.cost_curves import FuelCurve, UnitSystem
 from infrasys.function_data import XYCoords
 from infrasys.value_curves import LinearCurve
+from pydantic import ValidationError
 
 from r2x_sienna.exporter import to_psy
 from r2x_sienna.models import (
@@ -261,7 +262,7 @@ def test_line_requires_impedance_and_rating_fields():
     bus_1 = ACBus(name="line_required_bus_1", number=1003)
     bus_2 = ACBus(name="line_required_bus_2", number=1004)
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         Line(
             name="line_missing_fields",
             arc=Arc(from_to=bus_1, to_from=bus_2),

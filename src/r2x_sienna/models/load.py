@@ -526,18 +526,20 @@ class ActiveConstantPowerLoad(DynamicInjection):
     states: Annotated[
         list[str],
         Field(description="State names for the active constant power load model."),
-    ] = [
-        "θ_pll",
-        "ϵ_pll",
-        "η",
-        "v_dc",
-        "γd",
-        "γq",
-        "ir_cnv",
-        "ii_cnv",
-        "vr_filter",
-        "vi_filter",
-        "ir_filter",
-        "ii_filter",
-    ]
+    ] = Field(
+        default_factory=lambda: [
+            "θ_pll",
+            "ϵ_pll",
+            "η",
+            "v_dc",
+            "γd",
+            "γq",
+            "ir_cnv",
+            "ii_cnv",
+            "vr_filter",
+            "vi_filter",
+            "ir_filter",
+            "ii_filter",
+        ]
+    )
     n_states: Annotated[int, Field(description="Number of model states.")] = 12
