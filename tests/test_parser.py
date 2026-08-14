@@ -4,6 +4,7 @@ These tests verify basic parser instantiation and configuration using
 a minimal test data set.
 """
 
+import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock
@@ -117,9 +118,7 @@ def test_parser_preserves_existing_hydro_reservoir_time_series(
     assert inflow.name == "inflow"
 
 
-def test_parser_filters_hydro_reservoir_max_active_power(
-    sienna_config: SiennaConfig, mock_data_store: Mock
-):
+def test_parser_filters_hydro_reservoir_max_active_power(sienna_config: SiennaConfig, mock_data_store: Mock):
     """Reservoirs do not retain the unsupported max_active_power series."""
     ctx = PluginContext(config=sienna_config, store=mock_data_store)
     parser = SiennaParser.from_context(ctx)
@@ -220,9 +219,11 @@ def test_parser_adds_deterministic_inflow_when_system_has_deterministic_series(
     }
 
 
-def test_parser_builds_2area_5bus_with_source(data_folder: Path):
+def test_parser_builds_2area_5bus_with_source(data_folder: Path, tmp_path: Path):
     """Parse the 2area-5bus test system and verify Source deserialization."""
-    case_path = data_folder / "2area-5bus-system"
+    source_case_path = data_folder / "2area-5bus-system"
+    case_path = tmp_path / source_case_path.name
+    shutil.copytree(source_case_path, case_path)
     config = SiennaConfig(
         model_year=2029,
         system_name="2area-5bus-system",

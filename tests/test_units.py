@@ -4,6 +4,7 @@ import pytest
 from r2x_core.system import System
 from r2x_core.units import get_unit_system, set_unit_system
 
+from r2x_sienna.models.branch import Transformer2W, Transformer3W
 from r2x_sienna.models.costs import ThermalGenerationCost
 from r2x_sienna.models.enums import ACBusTypes, PrimeMoversType, ThermalFuels
 from r2x_sienna.models.generators import ThermalStandard
@@ -40,6 +41,43 @@ class TestSiennaComponent:
         assert bus.area == area
         assert bus.load_zone == load_zone
         assert bus.available is True
+
+    def test_zero_base_voltage_is_preserved(self):
+        bus = ACBus(name="zero_voltage_bus", number=1, base_voltage=0.0)
+
+        assert bus.base_voltage == 0.0
+
+    def test_zero_transformer_base_voltages_are_preserved(self):
+        values = Transformer3W.example().model_dump()
+
+        def remove_computed_fields(value):
+            if isinstance(value, dict):
+                value.pop("class_type", None)
+                for nested_value in value.values():
+                    remove_computed_fields(nested_value)
+            elif isinstance(value, list):
+                for nested_value in value:
+                    remove_computed_fields(nested_value)
+
+        remove_computed_fields(values)
+        values.update(
+            base_voltage_primary=0.0,
+            base_voltage_secondary=0.0,
+            base_voltage_tertiary=0.0,
+        )
+
+        transformer = Transformer3W.model_validate(values)
+
+        assert transformer.base_voltage_primary == 0.0
+        assert transformer.base_voltage_secondary == 0.0
+        assert transformer.base_voltage_tertiary == 0.0
+
+    def test_three_winding_transformer_primary_voltage_defaults_to_zero(self):
+        assert Transformer3W.model_fields["base_voltage_primary"].default == 0.0
+
+    def test_two_winding_transformer_base_voltages_default_to_zero(self):
+        assert Transformer2W.model_fields["base_voltage_primary"].default == 0.0
+        assert Transformer2W.model_fields["base_voltage_secondary"].default == 0.0
 
     def test_thermal_generator_creation(self):
         """Test ThermalStandard generator creation."""
