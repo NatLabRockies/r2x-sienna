@@ -24,12 +24,20 @@ from r2x_sienna.models import (
     PowerLoad,
     PrimeMoversType,
     RenewableDispatch,
+    StorageCost,
     ThermalFuels,
     ThermalGenerationCost,
     ThermalStandard,
     Transformer2W,
 )
 from r2x_sienna.serialization import serialize_component_to_psy, serialize_value
+
+
+def test_storage_cost_omits_null_variable_curves():
+    serialized = serialize_value(StorageCost(charge_variable_cost=None, discharge_variable_cost=None))
+
+    assert "charge_variable_cost" not in serialized
+    assert "discharge_variable_cost" not in serialized
 
 
 @pytest.fixture

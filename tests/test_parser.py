@@ -175,10 +175,10 @@ def test_parser_derives_inflow_timestamp_from_existing_series(mock_data_store: M
     assert inflow.initial_timestamp == existing_series.initial_timestamp
 
 
-def test_parser_adds_deterministic_inflow_when_system_has_deterministic_series(
+def test_parser_keeps_reservoir_inflow_source_only_when_system_has_forecasts(
     sienna_config: SiennaConfig, mock_data_store: Mock
 ):
-    """Missing reservoir inflow gets both series types when forecasts are present."""
+    """Missing reservoir inflow remains a source series when forecasts are present."""
     ctx = PluginContext(config=sienna_config, store=mock_data_store)
     parser = SiennaParser.from_context(ctx)
     system = System(name="hydro-test")
@@ -213,10 +213,7 @@ def test_parser_adds_deterministic_inflow_when_system_has_deterministic_series(
         """,
         (str(reservoir.uuid),),
     ).fetchall()
-    assert {row[0] for row in rows} == {
-        "Deterministic",
-        "SingleTimeSeries",
-    }
+    assert {row[0] for row in rows} == {"SingleTimeSeries"}
 
 
 def test_parser_builds_2area_5bus_with_source(data_folder: Path, tmp_path: Path):
