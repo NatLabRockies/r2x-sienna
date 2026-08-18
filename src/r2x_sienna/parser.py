@@ -2,6 +2,7 @@ import atexit
 import copy
 import json
 import shutil
+import sqlite3
 import tempfile
 import time
 from collections import defaultdict
@@ -629,6 +630,7 @@ class SiennaParser(Plugin[SiennaConfig]):
             _repair_deterministic_metadata_periods(conn)
             metadata_store = TimeSeriesMetadataStore(con=conn, initialize=False)
             conn.commit()
+            self._clear_hydro_reservoir_scaling_multipliers(conn)
             metadata_store._load_metadata_into_memory()
             mgr = TimeSeriesManager(con=conn, storage=storage, metadata_store=metadata_store)
             self.system._time_series_mgr = mgr
@@ -658,6 +660,42 @@ class SiennaParser(Plugin[SiennaConfig]):
                 "Filtered {} max_active_power time series from HydroReservoir components",
                 removed,
             )
+
+    def _clear_hydro_reservoir_scaling_multipliers(self, connection: sqlite3.Connection) -> None:
+        """Clear generator scaling inherited by upgraded HydroReservoir series."""
+        reservoir_uuids = [str(reservoir.uuid) for reservoir in self.system.get_components(HydroReservoir)]
+        if not reservoir_uuids:
+            return
+
+        updated = 0
+        for owner_uuid in reservoir_uuids:
+            rows = connection.execute(
+                """
+                SELECT rowid, scaling_factor_multiplier
+                FROM time_series_associations
+                WHERE owner_uuid = ?
+                """,
+                (owner_uuid,),
+            ).fetchall()
+            for rowid, raw_multiplier in rows:
+                if not raw_multiplier:
+                    continue
+                try:
+                    multiplier = json.loads(raw_multiplier)
+                except (TypeError, json.JSONDecodeError):
+                    multiplier = None
+                if multiplier != {
+                    "__metadata__": {"module": "PowerSystems", "function": "get_max_active_power"}
+                }:
+                    continue
+                connection.execute(
+                    "UPDATE time_series_associations SET scaling_factor_multiplier = NULL WHERE rowid = ?",
+                    (rowid,),
+                )
+                updated += 1
+        connection.commit()
+        if updated:
+            logger.info("Cleared {} inherited HydroReservoir scaling multipliers", updated)
 
     def _ensure_hydro_reservoir_inflow_time_series(self) -> None:
         """Create zero inflow series for reservoirs without a time-series association."""
