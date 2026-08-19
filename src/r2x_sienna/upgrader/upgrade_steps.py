@@ -260,6 +260,12 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
 
         ext = comp.get("ext", {})
 
+        # Time-series ownership is keyed by UUID, so reusing the legacy
+        # HydroEnergyReservoir's UUID here would make the new HydroReservoir
+        # inherit that component's entire time-series association graph,
+        # including series scaled for a generator (invalid for a reservoir).
+        reservoir_uuid = str(uuid.uuid4())
+
         reservoir = {
             "__metadata__": {"type": "HydroReservoir", "module": "PowerSystems"},
             "name": f"{comp['name']}_Reservoir",
@@ -277,7 +283,7 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
             "head_to_volume_factor": LinearCurve(0.0).model_dump(round_trip=True),
             "operation_cost": HydroReservoirCost().model_dump(round_trip=True),
             "level_data_type": str(ReservoirDataType.ENERGY),  # NOTE: Is this a good default?
-            "internal": comp.get("internal", {}),
+            "internal": {"uuid": {"value": reservoir_uuid}},
             "ext": ext,
         }
 
@@ -301,7 +307,7 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
             "turbine_type": ext.get("turbine_type"),
             "conversion_factor": ext.get("conversion_factor", 1.0),
             "travel_time": comp.get("travel_time"),
-            "reservoirs": [{"value": comp["internal"]["uuid"]["value"]}],
+            "reservoirs": [{"value": reservoir_uuid}],
             "prime_mover_type": str(PrimeMoversType.HY),
             "services": ext.get("services", []),
             "dynamic_injector": ext.get("dynamic_injector"),
