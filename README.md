@@ -1,144 +1,226 @@
-<div align="center">
-
-# r2x-sienna
-
-**Sienna PSY parser/exporter plugin for the `r2x-core` plugin framework.**
-
-[![CI](https://img.shields.io/github/actions/workflow/status/NatLabRockies/r2x-sienna/ci.yaml?branch=main&label=CI)](https://github.com/NatLabRockies/r2x-sienna/actions/workflows/ci.yaml)
-[![Actions Quality](https://img.shields.io/github/actions/workflow/status/NatLabRockies/r2x-sienna/workflow-quality.yaml?branch=main&label=actions-quality)](https://github.com/NatLabRockies/r2x-sienna/actions/workflows/workflow-quality.yaml)
-[![Python](https://img.shields.io/badge/python-3.11%20to%203.13-blue)](https://pypi.org/project/r2x-sienna/)
-[![PyPI](https://img.shields.io/pypi/v/r2x-sienna)](https://pypi.org/project/r2x-sienna/)
-[![License](https://img.shields.io/badge/license-BSD--3--Clause-green)](./LICENSE.txt)
-
-</div>
-
-> [!WARNING]
-> This project is currently optimized for internal R2X workflows. You are welcome
-> to use it, but APIs and behavior may continue to evolve as `r2x-core` evolves.
-
-`r2x-sienna` integrates Sienna-style PSY data with `r2x-core` and `infrasys`.
-It provides parser and exporter plugins, plus version-upgrade utilities for input
-JSON, so Sienna data can be loaded into `System` objects and written back out in
-PSY-compatible form.
+<h1 align="center">r2x-sienna</h1>
 
 <p align="center">
-  <a href="#quickstart">Quickstart</a> ·
-  <a href="#installation">Installation</a> ·
-  <a href="#what-it-provides">What It Provides</a> ·
-  <a href="#usage-with-r2x-core">Usage with r2x-core</a> ·
-  <a href="#development">Development</a> ·
-  <a href="#license">License</a>
+  <strong>Translate Sienna PSY JSON models to and from the R2X ecosystem.</strong>
 </p>
 
-## Quickstart
+<p align="center">
+  <a href="https://pypi.org/project/r2x-sienna/"><img src="https://img.shields.io/pypi/v/r2x-sienna.svg" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/r2x-sienna/"><img src="https://img.shields.io/pypi/pyversions/r2x-sienna.svg" alt="Supported Python versions"></a>
+  <a href="https://github.com/NatLabRockies/r2x-sienna/actions/workflows/ci.yaml"><img src="https://github.com/NatLabRockies/r2x-sienna/actions/workflows/ci.yaml/badge.svg" alt="CI status"></a>
+  <a href="https://natlabrockies.github.io/r2x-sienna/"><img src="https://img.shields.io/badge/docs-latest-blue.svg" alt="Documentation"></a>
+  <a href="https://github.com/NatLabRockies/r2x-sienna/actions/workflows/workflow-quality.yaml"><img src="https://github.com/NatLabRockies/r2x-sienna/actions/workflows/workflow-quality.yaml/badge.svg" alt="Workflow quality"></a>
+</p>
 
-Install:
+`r2x-sienna` is an [R2X Core](https://github.com/NatLabRockies/r2x-core)
+plugin for reading Sienna/PowerSystems JSON data into typed
+`infrasys.System` objects and writing those systems back to PSY-compatible JSON.
+It supports Python workflows and repeatable `r2x` CLI pipelines.
 
-```bash
-pip install r2x-sienna
+> [!WARNING]
+> This project is currently optimized for internal R2X workflows. APIs and
+> behavior may continue to evolve as `r2x-core` evolves.
+
+## What it does
+
+- **Parse Sienna models**: Read PSY JSON components, references, supplemental attributes, and time-series metadata.
+- **Export R2X systems**: Write PSY-compatible JSON with supplemental attributes and optional HDF5 time-series storage.
+- **Upgrade legacy data**: Apply ordered schema transformations and migrate legacy HDF5 metadata before parsing.
+- **Round-trip models**: Parse, inspect or transform a system, then export it again in Sienna-compatible form.
+- **Provide typed models**: Expose topology, branch, generation, load, service, cost, attribute, enum, and unit definitions.
+- **Compose pipelines**: Connect the Sienna parser and exporter with other R2X plugins through YAML pipelines.
+
+## Installation
+
+Using [uv](https://docs.astral.sh/uv/):
+
+```console
+uv add r2x-sienna
 ```
 
-Parse a Sienna JSON system into an `infrasys.System`, then export it back to
-PSY JSON:
+Or using pip:
+
+```console
+python -m pip install r2x-sienna
+```
+
+The package supports Python 3.11, 3.12, and 3.13. To verify installation
+and plugin discovery:
+
+```console
+python -c "import r2x_sienna; print(r2x_sienna.__version__)"
+r2x list
+```
+
+The CLI executable is `r2x`. Its discovered plugin names include
+`sienna-parser` and `sienna-exporter`.
+
+## Python quick start
+
+### Parse a Sienna JSON system
+
+The parser is initialized with an R2X Core `PluginContext`. The parser runs
+registered Sienna upgrades when `json_path` is provided.
 
 ```python
 from pathlib import Path
 
 from r2x_core import DataStore, PluginContext
-from r2x_sienna import (
-    SiennaConfig,
-    SiennaExporter,
-    SiennaExporterConfig,
-    SiennaParser,
+from r2x_sienna import SiennaConfig, SiennaParser
+
+json_path = Path("input/system.json")
+config = SiennaConfig(
+  json_path=str(json_path),
+  model_year=2029,
+  system_name="PJM-5",
+)
+context = PluginContext(config=config, store=DataStore(path=json_path.parent))
+
+result_context = SiennaParser.from_context(context).run()
+system = result_context.system
+if system is None:
+  raise RuntimeError("No system returned")
+print(system.name)
+```
+
+### Export a system to Sienna PSY JSON
+
+Pass the parsed or transformed system to the exporter through a context. HDF5
+time-series storage is exported alongside the JSON by default.
+
+```python
+from pathlib import Path
+
+from r2x_core import DataStore, PluginContext
+from r2x_sienna import SiennaExporter, SiennaExporterConfig
+
+output_path = Path("output/system.json")
+config = SiennaExporterConfig(output_path=str(output_path))
+context = PluginContext(
+  config=config,
+  system=system,
+  store=DataStore(path=output_path.parent),
 )
 
-data_path = Path("tests/data/case5_pjm_rt/c_sys5_pjm_rt.json")
-out_path = Path("output/system.json")
+SiennaExporter.from_context(context).run()
+```
 
-# Parse
-parse_cfg = SiennaConfig(
-    model_year=2029,
-    system_name="PJM-5",
-    json_path=str(data_path),
+Set `exporter.should_export_time_series = False` before `run()` when only JSON
+output is needed.
+
+### Upgrade a system independently
+
+Use `SiennaUpgrader` when data must be upgraded before building a parser context:
+
+```python
+from pathlib import Path
+
+from r2x_core import UpgradeType
+from r2x_sienna import SiennaUpgrader
+
+result = SiennaUpgrader(Path("input/system.json")).upgrade(
+  upgrade_type=UpgradeType.SYSTEM,
 )
-parse_ctx = PluginContext(config=parse_cfg, store=DataStore(path=data_path.parent))
-parsed_system = SiennaParser.from_context(parse_ctx).run().system
-
-# Export
-export_cfg = SiennaExporterConfig(output_path=str(out_path))
-export_ctx = PluginContext(config=export_cfg, system=parsed_system, store=DataStore(path=out_path.parent))
-SiennaExporter.from_context(export_ctx).run()
+if result.is_err():
+  raise RuntimeError(result.err())
 ```
 
-## Installation
+## R2X CLI pipelines
 
-### From PyPI
+Use a pipeline when parsing, transformations, and exporting should run as one
+reproducible workflow. Create a starter file with:
 
-Python requirement: `>=3.11, <3.14`.
-
-```bash
-pip install r2x-sienna
+```console
+r2x init sienna-pipeline.yaml
 ```
 
-Using `uv`:
+The following example parses a Sienna system and exports it again:
 
-```bash
-uv add r2x-sienna
+```yaml
+variables:
+  input_json: /data/input/system.json
+  output_json: /data/output/system.json
+  system_name: PJM-5
+  model_year: 2029
+
+pipelines:
+  round_trip:
+    - r2x-sienna.sienna-parser
+    - r2x-sienna.sienna-exporter
+
+config:
+  r2x-sienna.sienna-parser:
+    json_path: ${input_json}
+    system_name: ${system_name}
+    model_year: ${model_year}
+
+  r2x-sienna.sienna-exporter:
+    output_path: ${output_json}
+
+output_folder: /data/output
 ```
 
-### From Source
+Inspect and run the pipeline with:
 
-```bash
+```console
+r2x list
+r2x run sienna-pipeline.yaml round_trip --print
+r2x run sienna-pipeline.yaml round_trip --dry-run
+r2x run sienna-pipeline.yaml round_trip
+```
+
+Transformations from other R2X plugins can be inserted between the parser and
+exporter. Use `r2x list` to find installed plugin references.
+
+For direct plugin usage and schema-generated options:
+
+```console
+r2x run plugin sienna-parser --show-help
+r2x run plugin sienna-exporter --show-help
+```
+
+## Documentation
+
+The complete documentation includes tutorials, task-focused recipes,
+architecture explanations, API details, model catalogs, upgrader behavior, and
+pipeline examples:
+
+- [Documentation site](https://natlabrockies.github.io/r2x-sienna/)
+- [How-to guides](https://natlabrockies.github.io/r2x-sienna/how-tos/)
+- [Architecture explanations](https://natlabrockies.github.io/r2x-sienna/explanations/)
+- [API reference](https://natlabrockies.github.io/r2x-sienna/references/)
+- [CLI guide](https://natlabrockies.github.io/r2x-sienna/how-tos/r2x-cli.html)
+- [Upgrader design](https://natlabrockies.github.io/r2x-sienna/explanations/upgrader.html)
+
+## Development
+
+Install development dependencies from source:
+
+```console
 git clone https://github.com/NatLabRockies/r2x-sienna.git
 cd r2x-sienna
 uv sync --all-groups
 ```
 
-## What It Provides
-
-- `SiennaParser`: reads Sienna PSY JSON and related time series metadata into
-  `infrasys.System`.
-- `SiennaExporter`: writes `infrasys.System` back to Sienna-compatible PSY JSON,
-  including supplemental attributes and optional HDF5 time series export.
-- `SiennaUpgrader` and `run_sienna_upgrades(...)`: version-detection and upgrade
-  pipeline for legacy JSON data before parsing.
-- Plugin entry points for `r2x-core` under the `r2x_plugin` group:
-  - `sienna-parser = r2x_sienna:SiennaParser`
-  - `sienna-exporter = r2x_sienna:SiennaExporter`
-
-## Usage with r2x-core
-
-`r2x-sienna` follows the `r2x-core` plugin lifecycle.
-
-- Build parser/exporter instances with `PluginContext`.
-- Run plugin hooks through `.run()`.
-- Access parser/exporter configs through `SiennaConfig` and
-  `SiennaExporterConfig`.
-
-The parser `on_upgrade()` hook automatically runs Sienna data upgrades when
-`json_path` is provided, then proceeds with deserialization into a `System`.
-
-## Development
-
-Install dev dependencies:
-
-```bash
-uv sync --all-groups
-```
-
 Run the same checks used in CI:
 
-```bash
+```console
 uv run prek run --all-files --hook-stage pre-push
 ```
 
 Targeted commands:
 
-```bash
+```console
 uv run pytest -q -m "not slow" --maxfail=1 --disable-warnings
 uv run ty check ./src/r2x_sienna/
 ```
 
+## Contributing
+
+- [Issues](https://github.com/NatLabRockies/r2x-sienna/issues)
+- [Pull requests](https://github.com/NatLabRockies/r2x-sienna/pulls)
+- [Labels](https://github.com/NatLabRockies/r2x-sienna/labels)
+
 ## License
 
-BSD 3-Clause. See `LICENSE.txt`.
+This project is distributed under the [BSD 3-Clause License](LICENSE.txt).
