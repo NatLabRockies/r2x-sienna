@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/NatLabRockies/r2x-sienna/compare/v0.4.2...v0.5.0) (2026-08-21)
+
+
+### Features
+
+* update r2x-sienna models to match latest psy codebase ([#34](https://github.com/NatLabRockies/r2x-sienna/issues/34)) ([1a7a2a7](https://github.com/NatLabRockies/r2x-sienna/commit/1a7a2a7db49b882bc3a0049507e9f8fd50bab5ea))
+
+
+### Bug Fixes
+
+* address file formatting from broken codebase ([#37](https://github.com/NatLabRockies/r2x-sienna/issues/37)) ([85c4208](https://github.com/NatLabRockies/r2x-sienna/commit/85c420848b09c3cbd4fc76aa818d4793d3bfa43d))
+* remove uuid migration issue and original hps ts creation ([#36](https://github.com/NatLabRockies/r2x-sienna/issues/36)) ([b71c3d2](https://github.com/NatLabRockies/r2x-sienna/commit/b71c3d25f30253042cc47e35395c844f0446486d))
+
 ## [0.4.2](https://github.com/NatLabRockies/r2x-sienna/compare/v0.4.1...v0.4.2) (2026-08-11)
 
 
