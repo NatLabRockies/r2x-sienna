@@ -2,6 +2,7 @@ import json
 import re
 import sqlite3
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 from uuid import uuid4
@@ -22,6 +23,29 @@ if TYPE_CHECKING:
     from r2x_core import DataStore, PluginContext
 
     from r2x_sienna.plugin_config import SiennaConfig
+
+
+_INITIAL_TIMESTAMP_RE = re.compile(
+    r"^(?P<date>\d{4}-\d{2}-\d{2})[T ](?P<time>\d{2}:\d{2}:\d{2})"
+    r"(?:\.(?P<fraction>\d+))?(?:Z|[+-]\d{2}:\d{2})?$"
+)
+
+
+def _normalize_initial_timestamp(value: Any) -> Any:
+    """Format timestamps for InfrastructureSystems' strict DateTime parser."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat(timespec="auto")
+    if not isinstance(value, str):
+        return value
+
+    match = _INITIAL_TIMESTAMP_RE.match(value.strip())
+    if match is None:
+        return value
+    raw_fraction = match.group("fraction")
+    fraction = f".{raw_fraction}" if raw_fraction and raw_fraction.strip("0") else ""
+    return f"{match.group('date')}T{match.group('time')}{fraction}"
 
 
 # Import upgrade_steps at module level to trigger decorator registrations.
@@ -360,8 +384,7 @@ def migrate_metadata(conn: "sqlite3.Connection") -> bool:
     sql_data_to_insert: list[dict[str, Any]] = []
     for row in rows:
         initial_timestamp = row.get("initial_timestamp")
-        if isinstance(initial_timestamp, str) and "T" not in initial_timestamp:
-            initial_timestamp = initial_timestamp.replace(" ", "T")
+        initial_timestamp = _normalize_initial_timestamp(initial_timestamp)
 
         resolution = row.get("resolution")
         if resolution is None:
@@ -501,6 +524,112 @@ def _reconcile_metadata_uuid_references(conn: "sqlite3.Connection") -> int:
     return inserted
 
 
+def _normalize_metadata_timestamps(conn: "sqlite3.Connection") -> int:
+    """Normalize timestamps in association rows and serialized metadata blobs."""
+    cursor = conn.cursor()
+    updated = 0
+
+    for table in ("infrasys_metadata", "time_series_associations"):
+        cursor.execute(f"PRAGMA table_info({table})")
+        columns = {desc[1] for desc in cursor.fetchall()}
+        if "initial_timestamp" not in columns:
+            continue
+        cursor.execute(f"SELECT rowid, initial_timestamp FROM {table}")
+        for rowid, timestamp in cursor.fetchall():
+            normalized = _normalize_initial_timestamp(timestamp)
+            if normalized != timestamp:
+                cursor.execute(
+                    f"UPDATE {table} SET initial_timestamp = ? WHERE rowid = ?",
+                    (normalized, rowid),
+                )
+                updated += 1
+
+    cursor.execute("PRAGMA table_info(time_series_metadata)")
+    metadata_columns = {desc[1] for desc in cursor.fetchall()}
+    if {"metadata_uuid", "metadata"}.issubset(metadata_columns):
+        cursor.execute("SELECT metadata_uuid, metadata FROM time_series_metadata")
+        for metadata_uuid, raw_metadata in cursor.fetchall():
+            try:
+                metadata = json.loads(
+                    raw_metadata.decode() if isinstance(raw_metadata, bytes) else raw_metadata
+                )
+            except (AttributeError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            timestamp = metadata.get("initial_timestamp")
+            normalized = _normalize_initial_timestamp(timestamp)
+            if normalized != timestamp:
+                metadata["initial_timestamp"] = normalized
+                cursor.execute(
+                    "UPDATE time_series_metadata SET metadata = ? WHERE metadata_uuid = ?",
+                    (json.dumps(metadata, separators=(",", ":")), metadata_uuid),
+                )
+                updated += 1
+
+    if updated:
+        conn.commit()
+    return updated
+
+
+def _repair_deterministic_metadata_periods(conn: "sqlite3.Connection") -> int:
+    """Normalize deterministic metadata for InfrastructureSystems.jl."""
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(time_series_associations)")
+    association_columns = {desc[1] for desc in cursor.fetchall()}
+    required_columns = {"time_series_type", "resolution", "horizon", "interval"}
+    if not required_columns.issubset(association_columns):
+        return 0
+
+    cursor.execute(
+        """
+        UPDATE time_series_associations
+        SET time_series_type = 'DeterministicSingleTimeSeries',
+            horizon = COALESCE(horizon, resolution),
+            interval = COALESCE(interval, horizon, resolution)
+        WHERE time_series_type = 'Deterministic'
+           OR (time_series_type = 'DeterministicSingleTimeSeries'
+               AND (horizon IS NULL OR interval IS NULL))
+        """
+    )
+    updated = cursor.rowcount
+
+    cursor.execute("PRAGMA table_info(time_series_metadata)")
+    metadata_columns = {desc[1] for desc in cursor.fetchall()}
+    if {"metadata_uuid", "metadata"}.issubset(metadata_columns):
+        cursor.execute("SELECT metadata_uuid, metadata FROM time_series_metadata")
+        for metadata_uuid, raw_metadata in cursor.fetchall():
+            try:
+                metadata = json.loads(
+                    raw_metadata.decode() if isinstance(raw_metadata, bytes) else raw_metadata
+                )
+            except (AttributeError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+
+            metadata_type = metadata.get("__metadata__", {}).get("type")
+            if metadata_type != "DeterministicMetadata":
+                continue
+
+            resolution = metadata.get("resolution")
+            if not resolution:
+                continue
+            changed = False
+            if not metadata.get("horizon"):
+                metadata["horizon"] = resolution
+                changed = True
+            if not metadata.get("interval"):
+                metadata["interval"] = metadata["horizon"]
+                changed = True
+            if changed:
+                cursor.execute(
+                    "UPDATE time_series_metadata SET metadata = ? WHERE metadata_uuid = ?",
+                    (json.dumps(metadata, separators=(",", ":")), metadata_uuid),
+                )
+                updated += 1
+
+    if updated:
+        conn.commit()
+    return updated
+
+
 def _build_legacy_metadata_blob_from_association_row(row: tuple[Any, ...]) -> bytes:
     """Build a metadata JSON blob compatible with InfrastructureSystems.jl legacy migration.
 
@@ -551,7 +680,7 @@ def _build_legacy_metadata_blob_from_association_row(row: tuple[Any, ...]) -> by
             "__metadata__": {"module": "InfrastructureSystems", "type": "DeterministicMetadata"},
             "name": name,
             "resolution": {"type": "Millisecond", "value": resolution_ms},
-            "initial_timestamp": str(initial_timestamp),
+            "initial_timestamp": _normalize_initial_timestamp(initial_timestamp),
             "interval": {"type": "Millisecond", "value": interval_ms},
             "count": int(window_count or 0),
             "time_series_uuid": {"value": str(time_series_uuid)},
@@ -571,7 +700,7 @@ def _build_legacy_metadata_blob_from_association_row(row: tuple[Any, ...]) -> by
             "__metadata__": {"module": "InfrastructureSystems", "type": "SingleTimeSeriesMetadata"},
             "name": name,
             "resolution": {"type": "Millisecond", "value": resolution_ms},
-            "initial_timestamp": str(initial_timestamp),
+            "initial_timestamp": _normalize_initial_timestamp(initial_timestamp),
             "time_series_uuid": {"value": str(time_series_uuid)},
             "length": int(length or 0),
             "scaling_factor_multiplier": scaling_multiplier_payload,
@@ -707,8 +836,10 @@ def _upgrade_h5_time_series_metadata(h5_path: Path) -> Result[bool, str]:
         conn = sqlite3.connect(tmp_path)
         try:
             migrated = migrate_metadata(conn)
+            repaired = _repair_deterministic_metadata_periods(conn)
             removed = _reconcile_metadata_uuid_references(conn)
-            changed = migrated or removed > 0
+            normalized = _normalize_metadata_timestamps(conn)
+            changed = migrated or removed > 0 or normalized > 0 or repaired > 0
         finally:
             conn.close()
 

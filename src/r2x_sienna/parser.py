@@ -2,15 +2,19 @@ import atexit
 import copy
 import json
 import shutil
+import sqlite3
 import tempfile
 import time
 from collections import defaultdict
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO, Any
 from uuid import UUID
 
 import h5py
-from infrasys import Component
+import numpy as np
+from infrasys import Component, SingleTimeSeries
+from infrasys.exceptions import ISNotStored
 from infrasys.h5_time_series_storage import HDF5TimeSeriesStorage
 from infrasys.serialization import (
     TYPE_METADATA,
@@ -30,6 +34,7 @@ from r2x_core import Plugin, System, create_component
 from rust_ok import Err, Ok, Result
 
 from r2x_sienna.models.enums import ReserveDirection, ReserveType
+from r2x_sienna.models.generators import HydroDispatch, HydroReservoir
 from r2x_sienna.models.services import VariableReserve
 
 from .plugin_config import SiennaConfig
@@ -117,6 +122,8 @@ class SiennaParser(Plugin[SiennaConfig]):
             self._parse_components()
             self._parse_supplemental_attributes()
             self._h5_manager()
+            self._ensure_hydro_reservoir_inflow_time_series()
+            self._ensure_hydro_dispatch_budget_time_series()
 
             elapsed = time.perf_counter() - t0
             component_count = sum(1 for _ in system._component_mgr.iter_all())
@@ -618,15 +625,167 @@ class SiennaParser(Plugin[SiennaConfig]):
             t0 = time.perf_counter()
             storage = create_temporary_h5_storage(h5_path)
             conn = storage.get_metadata_store()
+            from r2x_sienna.upgrader.data_upgrader import _repair_deterministic_metadata_periods
+
+            _repair_deterministic_metadata_periods(conn)
             metadata_store = TimeSeriesMetadataStore(con=conn, initialize=False)
             conn.commit()
+            self._clear_hydro_reservoir_scaling_multipliers(conn)
             metadata_store._load_metadata_into_memory()
             mgr = TimeSeriesManager(con=conn, storage=storage, metadata_store=metadata_store)
             self.system._time_series_mgr = mgr
+            self._filter_hydro_reservoir_max_active_power()
             logger.info("HDF5 time series loaded in {:.2f}s", time.perf_counter() - t0)
 
         except Exception as e:  # noqa: BLE001
             logger.error("Failed to load time series data: {}", e)
+
+    def _filter_hydro_reservoir_max_active_power(self) -> None:
+        """Remove unsupported max_active_power series from hydro reservoirs."""
+        metadata_store = self.system._time_series_mgr._metadata_store
+        removed = 0
+        for reservoir in self.system.get_components(HydroReservoir):
+            try:
+                removed += len(
+                    metadata_store.remove(
+                        reservoir,
+                        name="max_active_power",
+                    )
+                )
+            except ISNotStored:
+                continue
+
+        if removed:
+            logger.info(
+                "Filtered {} max_active_power time series from HydroReservoir components",
+                removed,
+            )
+
+    def _clear_hydro_reservoir_scaling_multipliers(self, connection: sqlite3.Connection) -> None:
+        """Clear generator scaling inherited by upgraded HydroReservoir series."""
+        reservoir_uuids = [str(reservoir.uuid) for reservoir in self.system.get_components(HydroReservoir)]
+        if not reservoir_uuids:
+            return
+
+        updated = 0
+        for owner_uuid in reservoir_uuids:
+            rows = connection.execute(
+                """
+                SELECT rowid, scaling_factor_multiplier
+                FROM time_series_associations
+                WHERE owner_uuid = ?
+                """,
+                (owner_uuid,),
+            ).fetchall()
+            for rowid, raw_multiplier in rows:
+                if not raw_multiplier:
+                    continue
+                try:
+                    multiplier = json.loads(raw_multiplier)
+                except (TypeError, json.JSONDecodeError):
+                    multiplier = None
+                if multiplier != {
+                    "__metadata__": {"module": "PowerSystems", "function": "get_max_active_power"}
+                }:
+                    continue
+                connection.execute(
+                    "UPDATE time_series_associations SET scaling_factor_multiplier = NULL WHERE rowid = ?",
+                    (rowid,),
+                )
+                updated += 1
+        connection.commit()
+        if updated:
+            logger.info("Cleared {} inherited HydroReservoir scaling multipliers", updated)
+
+    def _ensure_hydro_reservoir_inflow_time_series(self) -> None:
+        """Create zero inflow series for reservoirs without a time-series association."""
+        model_year = self.config.model_year
+        if isinstance(model_year, list):
+            model_year = model_year[0] if model_year else None
+
+        if model_year is not None:
+            initial_timestamp = datetime(year=model_year, month=1, day=1, tzinfo=UTC)
+        else:
+            timestamp = self.system._time_series_mgr._metadata_store._con.execute(
+                """
+                SELECT initial_timestamp
+                FROM time_series_associations
+                WHERE initial_timestamp IS NOT NULL
+                LIMIT 1
+                """
+            ).fetchone()
+            if timestamp is None:
+                raise ValueError(
+                    "Cannot create HydroReservoir inflow series: model_year is not configured "
+                    "and no existing time-series timestamp is available"
+                )
+            initial_timestamp = datetime.fromisoformat(timestamp[0])
+
+        for reservoir in self.system.get_components(HydroReservoir):
+            associations = self.system._time_series_mgr._metadata_store._con.execute(
+                """
+                SELECT time_series_type
+                FROM time_series_associations
+                WHERE owner_uuid = ? AND name = 'inflow'
+                """,
+                (str(reservoir.uuid),),
+            ).fetchall()
+            association_types = {row[0] for row in associations}
+            if "SingleTimeSeries" not in association_types:
+                self.system.add_time_series(
+                    SingleTimeSeries.from_array(
+                        data=[0.0] * 8760,
+                        name="inflow",
+                        resolution=timedelta(hours=1),
+                        initial_timestamp=initial_timestamp,
+                    ),
+                    reservoir,
+                )
+
+    def _ensure_hydro_dispatch_budget_time_series(self) -> None:
+        """Create source hydro-budget series required by run-of-river models."""
+        model_year = self.config.model_year
+        if isinstance(model_year, list):
+            model_year = model_year[0] if model_year else None
+
+        if model_year is not None:
+            initial_timestamp = datetime(year=model_year, month=1, day=1, tzinfo=UTC)
+        else:
+            timestamp_row = self.system._time_series_mgr._metadata_store._con.execute(
+                """
+                SELECT initial_timestamp
+                FROM time_series_associations
+                WHERE initial_timestamp IS NOT NULL
+                LIMIT 1
+                """
+            ).fetchone()
+            if timestamp_row is None:
+                raise ValueError("Cannot create HydroDispatch hydro_budget series without a timestamp")
+            initial_timestamp = datetime.fromisoformat(timestamp_row[0])
+
+        for hydro in self.system.get_components(HydroDispatch):
+            exists = self.system._time_series_mgr._metadata_store._con.execute(
+                """
+                SELECT 1
+                FROM time_series_associations
+                WHERE owner_uuid = ? AND name = 'hydro_budget'
+                  AND time_series_type = 'SingleTimeSeries'
+                LIMIT 1
+                """,
+                (str(hydro.uuid),),
+            ).fetchone()
+            if exists is not None:
+                continue
+
+            self.system.add_time_series(
+                SingleTimeSeries.from_array(
+                    data=np.zeros(8760),
+                    name="hydro_budget",
+                    resolution=timedelta(hours=1),
+                    initial_timestamp=initial_timestamp,
+                ),
+                hydro,
+            )
 
 
 def create_temporary_h5_storage(source_h5_path):

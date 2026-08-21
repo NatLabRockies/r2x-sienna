@@ -8,7 +8,7 @@ from infrasys.value_curves import InputOutputCurve
 from pint import Quantity
 
 from r2x_sienna.models import Arc, Complex, FromTo_ToFrom, InputOutput, MinMax, StartUpStages, UpDown
-from r2x_sienna.models.costs import OperationalCost
+from r2x_sienna.models.costs import OperationalCost, StorageCost
 from r2x_sienna.parser import PARAMETRIZED_TYPES
 
 PARAMETRIZED_OUTPUT_TYPES = {"value_curve", "function_data", "loss"}
@@ -87,6 +87,16 @@ def _serialize_parametric_object(obj: InfraSysBaseModel) -> dict[str, Any]:
 
     for key in obj.model_fields_set:
         attribute = getattr(obj, key)
+        if (
+            isinstance(obj, StorageCost)
+            and key
+            in {
+                "charge_variable_cost",
+                "discharge_variable_cost",
+            }
+            and attribute is None
+        ):
+            continue
         if isinstance(attribute, StartUpStages):
             output_dict[key] = serialize_value(attribute, key)
             continue

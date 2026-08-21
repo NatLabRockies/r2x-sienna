@@ -3,7 +3,11 @@ import sqlite3
 
 from infrasys.time_series_metadata_store import create_associations_table
 
-from r2x_sienna.upgrader.data_upgrader import _reconcile_metadata_uuid_references, migrate_metadata
+from r2x_sienna.upgrader.data_upgrader import (
+    _reconcile_metadata_uuid_references,
+    _repair_deterministic_metadata_periods,
+    migrate_metadata,
+)
 
 
 def test_migrate_metadata_from_legacy_ms_schema():
@@ -85,6 +89,47 @@ def test_migrate_metadata_noop_when_schema_is_current():
 
     changed = migrate_metadata(con)
     assert changed is False
+
+
+def test_repair_deterministic_metadata_periods_normalizes_export_type():
+    con = sqlite3.connect(":memory:")
+    create_associations_table(con)
+    con.execute(
+        """
+        INSERT INTO time_series_associations (
+            time_series_uuid, time_series_type, initial_timestamp, resolution,
+            horizon, interval, window_count, length, name, owner_uuid, owner_type,
+            owner_category, features, metadata_uuid
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "11111111-1111-1111-1111-111111111111",
+            "DeterministicSingleTimeSeries",
+            "2024-01-01T00:00:00",
+            "P0DT3600.000S",
+            None,
+            None,
+            365,
+            8760,
+            "inflow",
+            "22222222-2222-2222-2222-222222222222",
+            "HydroReservoir",
+            "Component",
+            "[]",
+            "33333333-3333-3333-3333-333333333333",
+        ),
+    )
+
+    updated = _repair_deterministic_metadata_periods(con)
+
+    assert updated == 1
+    assert con.execute(
+        "SELECT time_series_type, horizon, interval FROM time_series_associations"
+    ).fetchone() == (
+        "DeterministicSingleTimeSeries",
+        "P0DT3600.000S",
+        "P0DT3600.000S",
+    )
 
 
 def test_reconcile_metadata_uuid_references_backfills_orphan_metadata_rows():

@@ -260,6 +260,12 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
 
         ext = comp.get("ext", {})
 
+        # Time-series ownership is keyed by UUID, so reusing the legacy
+        # HydroEnergyReservoir's UUID here would make the new HydroReservoir
+        # inherit that component's entire time-series association graph,
+        # including series scaled for a generator (invalid for a reservoir).
+        reservoir_uuid = str(uuid.uuid4())
+
         reservoir = {
             "__metadata__": {"type": "HydroReservoir", "module": "PowerSystems"},
             "name": f"{comp['name']}_Reservoir",
@@ -277,7 +283,7 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
             "head_to_volume_factor": LinearCurve(0.0).model_dump(round_trip=True),
             "operation_cost": HydroReservoirCost().model_dump(round_trip=True),
             "level_data_type": str(ReservoirDataType.ENERGY),  # NOTE: Is this a good default?
-            "internal": comp.get("internal", {}),
+            "internal": {"uuid": {"value": reservoir_uuid}},
             "ext": ext,
         }
 
@@ -301,7 +307,7 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
             "turbine_type": ext.get("turbine_type"),
             "conversion_factor": ext.get("conversion_factor", 1.0),
             "travel_time": comp.get("travel_time"),
-            "reservoirs": [{"value": comp["internal"]["uuid"]["value"]}],
+            "reservoirs": [{"value": reservoir_uuid}],
             "prime_mover_type": str(PrimeMoversType.HY),
             "services": ext.get("services", []),
             "dynamic_injector": ext.get("dynamic_injector"),
@@ -371,8 +377,9 @@ def upgrade_hydro_pumped_storage(system_data: dict[str, Any]) -> dict[str, Any]:
 
         ext = comp.get("ext", {})
 
-        head_uuid = str(uuid.uuid4())
+        head_uuid = comp["internal"]["uuid"]["value"]
         tail_uuid = str(uuid.uuid4())
+        pump_turbine_uuid = str(uuid.uuid4())
         head_reservoir = {
             "__metadata__": {"type": "HydroReservoir", "module": "PowerSystems"},
             "name": f"{comp['name']}_HeadReservoir",
@@ -438,7 +445,7 @@ def upgrade_hydro_pumped_storage(system_data: dict[str, Any]) -> dict[str, Any]:
             "prime_mover_type": comp.get("prime_mover_type"),
             "services": ext.get("services", []),
             "dynamic_injector": ext.get("dynamic_injector"),
-            "internal": comp.get("internal", {}),
+            "internal": {"uuid": {"value": pump_turbine_uuid}},
             "ext": ext,
         }
 

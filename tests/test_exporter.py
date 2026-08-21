@@ -1,9 +1,13 @@
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
+import h5py
+import numpy as np
 import pytest
+from infrasys import Deterministic, SingleTimeSeries, System, TimeSeriesStorageType
 from r2x_core import DataStore, PluginContext
 from rust_ok import Err, Ok
 
@@ -15,10 +19,12 @@ from r2x_sienna import (
 )
 from r2x_sienna.models import (
     ACBus,
+    HydroReservoir,
     MinMax,
     PowerLoad,
     PrimeMoversType,
     RenewableDispatch,
+    StorageCost,
     ThermalFuels,
     ThermalGenerationCost,
     ThermalStandard,
@@ -27,10 +33,71 @@ from r2x_sienna.models import (
 from r2x_sienna.serialization import serialize_component_to_psy, serialize_value
 
 
+def test_storage_cost_omits_null_variable_curves():
+    serialized = serialize_value(StorageCost(charge_variable_cost=None, discharge_variable_cost=None))
+
+    assert "charge_variable_cost" not in serialized
+    assert "discharge_variable_cost" not in serialized
+
+
 @pytest.fixture
 def data_store():
     """Create a DataStore instance for tests."""
     return DataStore()
+
+
+def test_exporter_copies_deterministic_data_to_hdf5(tmp_path: Path):
+    system = System(name="deterministic-export")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    timestamp = datetime(2023, 1, 1, tzinfo=UTC)
+    system.add_time_series(
+        SingleTimeSeries.from_array(
+            data=[0.0] * 8760,
+            name="inflow",
+            resolution=timedelta(hours=1),
+            initial_timestamp=timestamp,
+        ),
+        reservoir,
+    )
+    system.add_time_series(
+        Deterministic.from_array(
+            data=np.zeros((365, 24)),
+            name="inflow",
+            resolution=timedelta(hours=1),
+            initial_timestamp=timestamp,
+            horizon=timedelta(days=1),
+            interval=timedelta(days=1),
+            window_count=365,
+        ),
+        reservoir,
+    )
+
+    manager = system._time_series_mgr
+    target_storage = manager.convert_storage(
+        in_place=False,
+        time_series_storage_type=TimeSeriesStorageType.HDF5,
+    )
+    SiennaExporter._copy_deterministic_time_series(manager, target_storage)
+    manager._storage = target_storage
+    h5_path = tmp_path / "time_series.h5"
+    manager.serialize({}, h5_path, db_name=system.DB_FILENAME)
+    SiennaExporter._patch_time_series_data_attributes(h5_path)
+
+    with h5py.File(h5_path, "r") as h5_file:
+        data_groups = set(h5_file["time_series"])
+        for group in h5_file["time_series"].values():
+            assert group.attrs["type"] == "SingleTimeSeries"
+            assert group.attrs["module"] == "InfrastructureSystems"
+            assert group.attrs["data_type"] == "Float64"
+            assert group["data"].ndim == 1
+    uuids = {
+        row[0]
+        for row in manager._metadata_store._con.execute(
+            "SELECT time_series_uuid FROM time_series_associations"
+        )
+    }
+    assert uuids <= data_groups
 
 
 @pytest.fixture
@@ -466,6 +533,61 @@ def test_set_time_series_scaling_factor_multiplier(infrasys_test_system):
     assert load_scaling is None
 
 
+def test_export_assigns_inflow_scaling_factor_multiplier(tmp_path):
+    """Exported HydroReservoir inflow series use the PowerSystems getter."""
+    system = System(name="hydro-inflow-scaling")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    system.add_time_series(
+        SingleTimeSeries.from_array(
+            data=[0.0] * 8760,
+            name="inflow",
+            resolution=timedelta(hours=1),
+            initial_timestamp=datetime(2029, 1, 1, tzinfo=UTC),
+        ),
+        reservoir,
+    )
+    system.add_time_series(
+        Deterministic.from_array(
+            data=np.zeros((365, 24)),
+            name="inflow",
+            resolution=timedelta(hours=1),
+            initial_timestamp=datetime(2029, 1, 1, tzinfo=UTC),
+            horizon=timedelta(days=1),
+            interval=timedelta(days=1),
+            window_count=365,
+        ),
+        reservoir,
+    )
+
+    output_file = tmp_path / "hydro.json"
+    config = SiennaConfig(
+        model_year=2029,
+        system_name="hydro-inflow-scaling",
+        scenario="test",
+        output_path=str(output_file),
+    )
+    SiennaExporter.from_context(PluginContext(config=config, system=system)).run()
+
+    assert output_file.exists()
+    connection = system._time_series_mgr._metadata_store._con
+    scaling_rows = connection.execute(
+        """
+        SELECT time_series_type, scaling_factor_multiplier
+        FROM time_series_associations
+        WHERE owner_uuid = ? AND name = 'inflow'
+        ORDER BY time_series_type
+        """,
+        (str(reservoir.uuid),),
+    ).fetchall()
+    expected = {"__metadata__": {"module": "PowerSystems", "function": "get_inflow"}}
+    assert {row[0] for row in scaling_rows} == {
+        "Deterministic",
+        "SingleTimeSeries",
+    }
+    assert all(json.loads(row[1]) == expected for row in scaling_rows)
+
+
 def test_export_preserves_missing_time_series_scaling_factor(infrasys_test_system, tmp_path):
     """Test that export does not assign a scaling function to raw load time series."""
     load = next(iter(infrasys_test_system.get_components(PowerLoad)))
@@ -507,7 +629,7 @@ def test_set_time_series_scaling_factor_multiplier_requires_function(simple_test
 def test_set_time_series_scaling_factor_multiplier_requires_series(simple_test_system):
     """Test requiring the selected time series to exist on the component."""
     generator = simple_test_system.get_component(ThermalStandard, "thermal-standard-test")
-    with pytest.raises(ValueError, match="No SingleTimeSeries named 'max_active_power'"):
+    with pytest.raises(ValueError, match="No time series named 'max_active_power'"):
         exporter_mod.set_time_series_scaling_factor_multiplier(
             simple_test_system,
             generator,

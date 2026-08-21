@@ -8,12 +8,16 @@
 - `Bus`, `ACBus`, `DCBus`
 - `Arc`
 
+`Bus`, `ACBus`, and `DCBus` represent network nodes; `Arc` is the topology
+relationship used by branch and network equipment models.
+
 ## Branch and Network Equipment
 
 - `Branch`, `ACBranch`, `DCBranch`
 - `Line`, `MonitoredLine`
+- `TwoWindingTransformer`, `ThreeWindingTransformer`
 - `Transformer2W`, `TapTransformer`, `PhaseShiftingTransformer`
-- `Transformer3W`, `ThreeWindingTransformer`, `PhaseShiftingTransformer3W`
+- `Transformer3W`, `PhaseShiftingTransformer3W`
 - `TwoTerminalHVDCLine`, `TwoTerminalGenericHVDCLine`, `TwoTerminalLCCLine`, `TwoTerminalVSCLine`, `TModelHVDCLine`
 - `AreaInterchange`, `DiscreteControlledACBranch`
 
@@ -27,6 +31,7 @@
 
 ## Load and FACTS-adjacent Load Models
 
+- `InterconnectingConverter`
 - `PowerLoad`, `StandardLoad`, `InterruptiblePowerLoad`, `InterruptibleStandardLoad`
 - `ShiftablePowerLoad`
 - `MotorLoad`, `ExponentialLoad`
@@ -36,7 +41,9 @@
 ## Services and Core Mappings
 
 - `Service`
-- `Reserve`, `VariableReserve`, `TransmissionInterface`
+- `Reserve`, `VariableReserve`
+- `ReserveNonSpinning`, `VariableReserveNonSpinning`, `ConstantReserveNonSpinning`
+- `ReserveDemandCurve`, `TransmissionInterface`
 - `ReserveMap`, `TransmissionInterfaceMap`
 
 ## Cost Models
@@ -57,6 +64,37 @@
   `POWER_OUTPUT` basis with validated `energy_unit` pairing. Scalar `float` rates are
   automatically wrapped in a constant-rate `LinearCurve`.
 
+## All Exported Models
+
+The following classes and model-like types are exported from
+`r2x_sienna.models` and are available for direct import. The grouped catalog
+above describes their domain roles; this list is the complete public export
+surface for model definitions.
+
+### Component Classes
+
+`ACBranch`, `ACBus`, `ActiveConstantPowerLoad`, `Arc`, `Area`,
+`AreaInterchange`, `Branch`, `Bus`, `ConstantReserveNonSpinning`, `DCBranch`,
+`DCBus`, `DiscreteControlledACBranch`, `EmissionsData`,
+`EnergyReservoirStorage`, `ExponentialLoad`, `FACTSControlDevice`,
+`FixedAdmittance`, `Generator`, `GeographicInfo`,
+`GeometricDistributionForcedOutage`, `HybridSystem`, `HydroDispatch`,
+`HydroEnergyReservoir`, `HydroGen`, `HydroGenerationCost`, `HydroPumpTurbine`,
+`HydroPumpedStorage`, `HydroReservoir`, `HydroReservoirCost`, `HydroTurbine`,
+`ImpedanceCorrectionData`, `InterconnectingConverter`, `InterruptiblePowerLoad`,
+`InterruptibleStandardLoad`, `Line`, `LoadCost`, `LoadZone`, `MonitoredLine`,
+`MotorLoad`, `PhaseShiftingTransformer`, `PhaseShiftingTransformer3W`,
+`PowerLoad`, `RenewableDispatch`, `RenewableGen`, `RenewableGenerationCost`,
+`RenewableNonDispatch`, `Reserve`, `ReserveDemandCurve`, `ReserveMap`,
+`ReserveNonSpinning`, `Service`, `ShiftablePowerLoad`, `Source`, `StandardLoad`,
+`Storage`, `StorageCost`, `SwitchedAdmittance`, `SynchronousCondenser`,
+`TModelHVDCLine`, `TapTransformer`, `ThermalGen`, `ThermalGenerationCost`,
+`ThermalMultiStart`, `ThermalStandard`, `ThreeWindingTransformer`,
+`TransmissionInterface`, `TransmissionInterfaceMap`,
+`TwoTerminalGenericHVDCLine`, `TwoTerminalHVDCLine`, `TwoTerminalLCCLine`,
+`TwoTerminalVSCLine`, `TwoWindingTransformer`, `Transformer2W`, `Transformer3W`,
+`VariableReserve`, and `VariableReserveNonSpinning`.
+
 ## Emissions Enums
 
 | Enum | Members |
@@ -66,10 +104,25 @@
 | `MassUnit` | `KG`, `LB`, `SHORT_TON`, `METRIC_TON` |
 | `EnergyUnit` | `MMBTU`, `GJ`, `MWH` |
 
+Additional exported classification enums are:
+
+- `ACBusTypes`
+- `DiscreteControlledBranchStatus`, `DiscreteControlledBranchType`
+- `FACTSOperationModes`
+- `HydroTurbineType`, `PumpHydroStatus`, `ReservoirDataType`, `ReservoirLocation`
+- `ImpedanceCorrectionTransformerControlMode`
+- `PrimeMoversType`, `ReserveDirection`, `ReserveType`
+- `ThermalFuels`
+- `TransformerControlObjective`
+- `WindingCategory`, `WindingGroupNumber`
+
 ## Helper Types and Enums
 
 - Named tuples/helpers: `MinMax`, `UpDown`, `StartShut`, `StartUpStages`, `StartTimeLimits`, `InputOutput`, `FromTo_ToFrom`, `Complex`, `GeoLocation`
 - Enums include fuel, reserve, transformer, hydro, bus-type, and related classification values
+
+These helper models are used as typed fields inside component and cost models;
+they can also be imported directly from `r2x_sienna.models`.
 
 ## Notes
 

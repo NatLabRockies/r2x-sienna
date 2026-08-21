@@ -61,6 +61,8 @@ When `should_export_time_series` is enabled (default), the exporter writes:
 - `run_sienna_upgrades(...)` is the parser-facing wrapper used in plugin hooks
 
 The upgrader applies schema and data fixes before parse, and can also migrate legacy HDF5 time series metadata tables.
+See [Upgrader Design](upgrader.md) for the full execution flow, registered
+transformations, ordering rules, and HDF5 migration details.
 
 ## Why This Architecture
 

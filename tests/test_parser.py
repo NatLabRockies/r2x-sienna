@@ -4,13 +4,19 @@ These tests verify basic parser instantiation and configuration using
 a minimal test data set.
 """
 
+import shutil
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock
+from uuid import uuid4
 
+import numpy as np
 import pytest
-from r2x_core import DataStore, PluginContext
+from infrasys import Deterministic, SingleTimeSeries
+from infrasys.exceptions import ISNotStored
+from r2x_core import DataStore, PluginContext, System
 
-from r2x_sienna.models import Source
+from r2x_sienna.models import HydroReservoir, Source
 from r2x_sienna.parser import SiennaParser
 from r2x_sienna.plugin_config import SiennaConfig
 
@@ -68,9 +74,230 @@ def test_parser_system_access(sienna_config: SiennaConfig, mock_data_store: Mock
         _ = parser.system
 
 
-def test_parser_builds_2area_5bus_with_source(data_folder: Path):
+def test_parser_adds_default_hydro_reservoir_inflow_series(
+    sienna_config: SiennaConfig, mock_data_store: Mock
+):
+    """Reservoirs created during PSY4-to-PSY5 upgrades get a default inflow series."""
+    ctx = PluginContext(config=sienna_config, store=mock_data_store)
+    parser = SiennaParser.from_context(ctx)
+    system = System(name="hydro-test")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    parser._ctx.system = system
+
+    parser._ensure_hydro_reservoir_inflow_time_series()
+
+    time_series = system.get_time_series(reservoir, "inflow")
+    assert time_series.name == "inflow"
+    assert len(time_series.data) == 8760
+    assert all(value == 0.0 for value in time_series.data)
+
+
+def test_parser_preserves_existing_hydro_reservoir_time_series(
+    sienna_config: SiennaConfig, mock_data_store: Mock
+):
+    """Existing reservoir series are not replaced by the default series."""
+    ctx = PluginContext(config=sienna_config, store=mock_data_store)
+    parser = SiennaParser.from_context(ctx)
+    system = System(name="hydro-test")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    existing_series = SingleTimeSeries.from_array(
+        data=[1.0] * 8760,
+        name="existing_inflow",
+        resolution=timedelta(hours=1),
+        initial_timestamp=datetime(year=2029, month=1, day=1, tzinfo=UTC),
+    )
+    system.add_time_series(existing_series, reservoir)
+    parser._ctx.system = system
+
+    parser._ensure_hydro_reservoir_inflow_time_series()
+
+    existing = system.get_time_series(reservoir, "existing_inflow")
+    inflow = system.get_time_series(reservoir, "inflow")
+    assert existing.name == "existing_inflow"
+    assert inflow.name == "inflow"
+
+
+def test_parser_filters_hydro_reservoir_max_active_power(sienna_config: SiennaConfig, mock_data_store: Mock):
+    """Reservoirs do not retain the unsupported max_active_power series."""
+    ctx = PluginContext(config=sienna_config, store=mock_data_store)
+    parser = SiennaParser.from_context(ctx)
+    system = System(name="hydro-test")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    system.add_time_series(
+        SingleTimeSeries.from_array(
+            data=[1.0] * 8760,
+            name="max_active_power",
+            resolution=timedelta(hours=1),
+            initial_timestamp=datetime(year=2029, month=1, day=1, tzinfo=UTC),
+        ),
+        reservoir,
+    )
+    system.add_time_series(
+        SingleTimeSeries.from_array(
+            data=[2.0] * 8760,
+            name="inflow",
+            resolution=timedelta(hours=1),
+            initial_timestamp=datetime(year=2029, month=1, day=1, tzinfo=UTC),
+        ),
+        reservoir,
+    )
+    parser._ctx.system = system
+
+    parser._filter_hydro_reservoir_max_active_power()
+
+    with pytest.raises(ISNotStored):
+        system.get_time_series(reservoir, "max_active_power")
+    assert system.get_time_series(reservoir, "inflow").name == "inflow"
+
+
+def test_parser_clears_hydro_reservoir_scaling_multipliers(
+    sienna_config: SiennaConfig, mock_data_store: Mock
+):
+    """Clear inherited generator scaling without changing unrelated metadata."""
+    ctx = PluginContext(config=sienna_config, store=mock_data_store)
+    parser = SiennaParser.from_context(ctx)
+    system = System(name="hydro-test")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    parser._ctx.system = system
+    timestamp = datetime(year=2029, month=1, day=1, tzinfo=UTC)
+    for name in ("hydro_budget", "inflow"):
+        system.add_time_series(
+            SingleTimeSeries.from_array(
+                data=[1.0] * 8760,
+                name=name,
+                resolution=timedelta(hours=1),
+                initial_timestamp=timestamp,
+            ),
+            reservoir,
+        )
+
+    connection = system._time_series_mgr._metadata_store._con
+    invalid = '{"__metadata__":{"module":"PowerSystems","function":"get_max_active_power"}}'
+    valid = '{"__metadata__":{"module":"PowerSystems","function":"get_inflow"}}'
+    connection.execute(
+        """
+        UPDATE time_series_associations
+        SET scaling_factor_multiplier = ?
+        WHERE owner_uuid = ? AND name = 'hydro_budget'
+        """,
+        (invalid, str(reservoir.uuid)),
+    )
+    connection.execute(
+        """
+        UPDATE time_series_associations
+        SET scaling_factor_multiplier = ?
+        WHERE owner_uuid = ? AND name = 'inflow'
+        """,
+        (valid, str(reservoir.uuid)),
+    )
+    unrelated_owner = str(uuid4())
+    connection.execute(
+        """
+        INSERT INTO time_series_associations (
+            time_series_uuid, time_series_type, initial_timestamp, resolution,
+            length, name, owner_uuid, owner_type, owner_category, features,
+            scaling_factor_multiplier, metadata_uuid
+        ) VALUES (?, 'SingleTimeSeries', ?, '1 hour', 8760, 'hydro_budget', ?,
+                  'HydroDispatch', 'Component', '[]', ?, ?)
+        """,
+        (str(uuid4()), timestamp.isoformat(), unrelated_owner, invalid, str(uuid4())),
+    )
+    connection.commit()
+
+    parser._clear_hydro_reservoir_scaling_multipliers(connection)
+
+    rows = connection.execute(
+        """
+        SELECT owner_uuid, name, scaling_factor_multiplier
+        FROM time_series_associations
+        WHERE (owner_uuid = ? AND name IN ('hydro_budget', 'inflow'))
+           OR owner_uuid = ?
+        ORDER BY owner_uuid, name
+        """,
+        (str(reservoir.uuid), unrelated_owner),
+    ).fetchall()
+    assert {
+        (owner_uuid, name): scaling_factor_multiplier for owner_uuid, name, scaling_factor_multiplier in rows
+    } == {
+        (str(reservoir.uuid), "hydro_budget"): None,
+        (str(reservoir.uuid), "inflow"): valid,
+        (unrelated_owner, "hydro_budget"): invalid,
+    }
+
+
+def test_parser_derives_inflow_timestamp_from_existing_series(mock_data_store: Mock):
+    """Missing model_year uses an existing time-series timestamp."""
+    config = SiennaConfig(model_year=None, system_name="test_case")
+    ctx = PluginContext(config=config, store=mock_data_store)
+    parser = SiennaParser.from_context(ctx)
+    system = System(name="hydro-test")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    existing_series = SingleTimeSeries.from_array(
+        data=[1.0] * 8760,
+        name="hydro_budget",
+        resolution=timedelta(hours=1),
+        initial_timestamp=datetime(year=2023, month=1, day=1, tzinfo=UTC),
+    )
+    system.add_time_series(existing_series, reservoir)
+    parser._ctx.system = system
+
+    parser._ensure_hydro_reservoir_inflow_time_series()
+
+    inflow = system.get_time_series(reservoir, "inflow")
+    assert inflow.initial_timestamp == existing_series.initial_timestamp
+
+
+def test_parser_keeps_reservoir_inflow_source_only_when_system_has_forecasts(
+    sienna_config: SiennaConfig, mock_data_store: Mock
+):
+    """Missing reservoir inflow remains a source series when forecasts are present."""
+    ctx = PluginContext(config=sienna_config, store=mock_data_store)
+    parser = SiennaParser.from_context(ctx)
+    system = System(name="hydro-test")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    system.add_time_series(
+        Deterministic.from_array(
+            data=np.ones((365, 24)),
+            name="hydro_budget",
+            resolution=timedelta(hours=1),
+            initial_timestamp=datetime(year=2029, month=1, day=1, tzinfo=UTC),
+            horizon=timedelta(days=1),
+            interval=timedelta(days=1),
+            window_count=365,
+        ),
+        reservoir,
+    )
+    system._time_series_mgr._metadata_store._con.execute(
+        "UPDATE time_series_associations SET time_series_type = 'DeterministicSingleTimeSeries'"
+    )
+    parser._ctx.system = system
+
+    parser._ensure_hydro_reservoir_inflow_time_series()
+
+    con = system._time_series_mgr._metadata_store._con
+    rows = con.execute(
+        """
+        SELECT time_series_type
+        FROM time_series_associations
+        WHERE owner_uuid = ? AND name = 'inflow'
+        ORDER BY time_series_type
+        """,
+        (str(reservoir.uuid),),
+    ).fetchall()
+    assert {row[0] for row in rows} == {"SingleTimeSeries"}
+
+
+def test_parser_builds_2area_5bus_with_source(data_folder: Path, tmp_path: Path):
     """Parse the 2area-5bus test system and verify Source deserialization."""
-    case_path = data_folder / "2area-5bus-system"
+    source_case_path = data_folder / "2area-5bus-system"
+    case_path = tmp_path / source_case_path.name
+    shutil.copytree(source_case_path, case_path)
     config = SiennaConfig(
         model_year=2029,
         system_name="2area-5bus-system",

@@ -5,6 +5,7 @@
 :hidden:
 
 workflow
+upgrader
 models-and-units
 ```
 
@@ -23,4 +24,5 @@ This section explains how `r2x-sienna` works internally and how its key parts fi
 ## Read Next
 
 - [Parser, Exporter, and Upgrader Workflow](workflow.md)
+- [Upgrader Design](upgrader.md)
 - [Models and Units Design](models-and-units.md)

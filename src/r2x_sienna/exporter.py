@@ -5,12 +5,14 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import numpy as np
 import orjson
-from infrasys import TimeSeriesStorageType
+from infrasys import Deterministic, TimeSeriesStorageType
 from loguru import logger
 from r2x_core import Plugin
 from rust_ok import Err, Ok, Result
 
+from r2x_sienna.models import HydroReservoir
 from r2x_sienna.serialization import serialize_component_to_psy
 
 from .plugin_config import SiennaExporterConfig
@@ -38,12 +40,16 @@ def set_time_series_scaling_factor_multiplier(
         SET scaling_factor_multiplier = ?
         WHERE owner_uuid = ?
           AND name = ?
-          AND time_series_type = 'SingleTimeSeries'
+                    AND time_series_type IN (
+                            'SingleTimeSeries',
+                            'Deterministic',
+                            'DeterministicSingleTimeSeries'
+                    )
         """,
         (json.dumps(payload), str(owner.uuid), name),
     ).rowcount
     if not updated:
-        raise ValueError(f"No SingleTimeSeries named '{name}' is attached to {owner.name}")
+        raise ValueError(f"No time series named '{name}' is attached to {owner.name}")
     connection.commit()
 
 
@@ -324,7 +330,20 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
         try:
             logger.debug("Converting time series storage to HDF5")
             t0 = time.perf_counter()
-            self.system.convert_storage(time_series_storage_type=TimeSeriesStorageType.HDF5)
+            time_series_manager = self.system._time_series_mgr
+            for reservoir in self.system.get_components(HydroReservoir):
+                set_time_series_scaling_factor_multiplier(
+                    self.system,
+                    reservoir,
+                    "inflow",
+                    "get_inflow",
+                )
+            h5_storage = time_series_manager.convert_storage(
+                in_place=False,
+                time_series_storage_type=TimeSeriesStorageType.HDF5,
+            )
+            self._copy_deterministic_time_series(time_series_manager, h5_storage)
+            time_series_manager._storage = h5_storage
 
             storage_file_path = f"{self.output_path.stem}_time_series_storage.h5"
             full_storage_path = self.output_path.parent / storage_file_path
@@ -340,6 +359,7 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
 
             # Inject compression metadata attributes expected by InfrastructureSystems.jl
             self._patch_compression_attributes(full_storage_path)
+            self._patch_time_series_data_attributes(full_storage_path)
 
             # Patch the embedded SQLite metadata to rename legacy component types
             self._patch_time_series_owner_types(full_storage_path)
@@ -371,6 +391,33 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
             logger.error("Failed to export time series: {}", e)
             raise
 
+    @staticmethod
+    def _copy_deterministic_time_series(time_series_manager: Any, target_storage: Any) -> None:
+        """Copy deterministic arrays omitted by Infrasys storage conversion."""
+        metadata_store = time_series_manager._metadata_store
+        source_storage = time_series_manager._storage
+        for time_series_uuid in metadata_store.unique_uuids_by_type("Deterministic"):
+            metadata = metadata_store.list_metadata_with_time_series_uuid(time_series_uuid, limit=1)
+            if len(metadata) != 1:
+                raise RuntimeError(
+                    f"Expected one metadata row for deterministic time series {time_series_uuid}, "
+                    f"got {len(metadata)}"
+                )
+            metadata_item = metadata[0]
+            source_time_series = source_storage.get_time_series(metadata_item)
+            target_storage.add_time_series(
+                metadata_item,
+                Deterministic.from_array(
+                    data=np.asarray(source_time_series.data_array, dtype=float),
+                    name=metadata_item.name,
+                    initial_timestamp=metadata_item.initial_timestamp,
+                    resolution=metadata_item.resolution,
+                    horizon=metadata_item.horizon,
+                    interval=metadata_item.interval,
+                    window_count=metadata_item.window_count,
+                ),
+            )
+
     def _patch_compression_attributes(self, h5_path: Path) -> None:
         """Write compression-settings attributes to the ``time_series`` group.
 
@@ -399,6 +446,40 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
                 if key not in grp.attrs:
                     grp.attrs[key] = value
         logger.debug("Patched compression attributes on '{}'", TS_GROUP)
+
+    @staticmethod
+    def _patch_time_series_data_attributes(h5_path: Path) -> None:
+        """Make HDF5 groups compatible with InfrastructureSystems.jl readers."""
+        import h5py
+        import numpy as np
+
+        with h5py.File(h5_path, "a") as h5_file:
+            time_series_group = h5_file.get("time_series")
+            if time_series_group is None:
+                return
+            patched = 0
+            for series_group in time_series_group.values():
+                if not isinstance(series_group, h5py.Group) or "data" not in series_group:
+                    continue
+                series_type = series_group.attrs.get("type")
+                if isinstance(series_type, bytes):
+                    series_type = series_type.decode()
+                if series_type == "Deterministic":
+                    data = np.asarray(series_group["data"][:])
+                    if data.ndim != 1:
+                        flattened = data.reshape(-1)
+                        del series_group["data"]
+                        series_group.create_dataset("data", data=flattened, compression=5)
+                    # Julia's DeterministicSingleTimeSeries wraps a static series.
+                    series_group.attrs["type"] = "SingleTimeSeries"
+                    patched += 1
+                if "module" not in series_group.attrs:
+                    series_group.attrs["module"] = "InfrastructureSystems"
+                    patched += 1
+                if "data_type" not in series_group.attrs:
+                    series_group.attrs["data_type"] = "Float64"
+                    patched += 1
+        logger.debug("Patched {} time series HDF5 attributes", patched)
 
     def _patch_time_series_owner_types(self, h5_path: Path) -> None:
         """Post-process the HDF5 to rename legacy owner_type values in the embedded SQLite metadata."""

@@ -3,8 +3,9 @@
 from typing import Annotated, Any
 
 from infrasys.value_curves import InputOutputCurve, LinearCurve
+from loguru import logger
 from pint import Quantity
-from pydantic import Field, NonNegativeFloat, NonPositiveFloat, field_serializer
+from pydantic import Field, NonNegativeFloat, NonPositiveFloat, field_serializer, field_validator
 
 from .core import Device
 from .enums import (
@@ -169,8 +170,10 @@ class TwoWindingTransformer(ACBranch):
     base_power: (
         Annotated[float | None, Field(ge=0, description="Thermal rating of the transformer.")] | None
     ) = None
-    base_voltage_primary: float | None = None
-    base_voltage_secondary: float | None = None
+    base_voltage_primary: Annotated[float | None, Field(ge=0, description="Primary base voltage in kV")] = 0.0
+    base_voltage_secondary: Annotated[
+        float | None, Field(ge=0, description="Secondary base voltage in kV")
+    ] = 0.0
     rating_b: Annotated[float, Field(description="Second thermal rating of the transformer.")] | None = None
     rating_c: Annotated[float, Field(description="Third thermal rating of the transformer.")] | None = None
 
@@ -276,14 +279,12 @@ class ThreeWindingTransformer(Branch):
         float, Field(gt=0, description="Base power (MVA) for secondary-tertiary windings")
     ]
     base_power_13: Annotated[float, Field(gt=0, description="Base power (MVA) for primary-tertiary windings")]
-    base_voltage_primary: Annotated[float | None, Field(gt=0, description="Primary base voltage in kV")] = (
-        None
-    )
+    base_voltage_primary: Annotated[float | None, Field(ge=0, description="Primary base voltage in kV")] = 0.0
     base_voltage_secondary: Annotated[
-        float | None, Field(gt=0, description="Secondary base voltage in kV")
-    ] = None
-    base_voltage_tertiary: Annotated[float | None, Field(gt=0, description="Tertiary base voltage in kV")] = (
-        None
+        float | None, Field(ge=0, description="Secondary base voltage in kV")
+    ] = 0.0
+    base_voltage_tertiary: Annotated[float | None, Field(ge=0, description="Tertiary base voltage in kV")] = (
+        0.0
     )
     g: Annotated[
         float, Field(description="Shunt conductance in pu from star bus to ground (MAG1 in PSS/E)")
@@ -382,18 +383,20 @@ class Transformer3W(ThreeWindingTransformer):
 class PhaseShiftingTransformer3W(ThreeWindingTransformer):
     """A 3-winding phase-shifting transformer."""
 
-    α_primary: Annotated[
-        float, Field(ge=-1.571, le=1.571, description="Initial condition of primary phase shift (radians)")
-    ]
-    α_secondary: Annotated[
-        float, Field(ge=-1.571, le=1.571, description="Initial condition of secondary phase shift (radians)")
-    ]
-    α_tertiary: Annotated[
-        float, Field(ge=-1.571, le=1.571, description="Initial condition of tertiary phase shift (radians)")
-    ]
-    phase_angle_limits: Annotated[
-        MinMax, Field(description="Minimum and maximum phase angle limits (radians)")
-    ] = MinMax(min=-3.1416, max=3.1416)
+    α_primary: Annotated[float, Field(description="Initial condition of primary phase shift (radians)")]
+    α_secondary: Annotated[float, Field(description="Initial condition of secondary phase shift (radians)")]
+    α_tertiary: Annotated[float, Field(description="Initial condition of tertiary phase shift (radians)")]
+    phase_angle_limits: MinMax
+
+    @field_validator("α_primary", "α_secondary", "α_tertiary")
+    @classmethod
+    def _warn_for_out_of_range_angles(cls, value: float) -> float:
+        if not -1.571 <= value <= 1.571:
+            logger.warning(
+                "Phase-shifting transformer angle {} is outside the valid range [-1.571, 1.571].",
+                value,
+            )
+        return value
 
     @classmethod
     def example(cls) -> "PhaseShiftingTransformer3W":
@@ -523,8 +526,18 @@ class PhaseShiftingTransformer(TwoWindingTransformer):
             ),
         ),
     ]
-    α: Annotated[float, Field(ge=-1.571, le=1.571, description="Phase angle in radians")]
+    α: Annotated[float, Field(description="Phase angle in radians")]
     phase_angle_limits: MinMax
+
+    @field_validator("α")
+    @classmethod
+    def _warn_for_out_of_range_angle(cls, value: float) -> float:
+        if not -1.571 <= value <= 1.571:
+            logger.warning(
+                "Phase-shifting transformer angle {} is outside the valid range [-1.571, 1.571].",
+                value,
+            )
+        return value
 
     @classmethod
     def example(cls) -> "PhaseShiftingTransformer":
