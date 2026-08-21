@@ -21,7 +21,7 @@ class AggregationTopology(Topology):
 class Area(AggregationTopology):
     """Collection of buses in a given region."""
 
-    peak_active_power: Annotated[NonNegativeFloat, Field(description="Peak active power in the area")] = 0.0
+    peak_active_power: Annotated[float, Field(description="Peak active power in the area")] = 0.0
     peak_reactive_power: Annotated[float, Field(description="Peak reactive power in the area")] = 0.0
     load_response: Annotated[
         float,
