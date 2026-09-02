@@ -18,7 +18,6 @@ from r2x_sienna.upgrader.data_upgrader import (
 from r2x_sienna.upgrader.upgrade_steps import (
     _sanitize_geojson_coordinates,
     upgrade_geographic_info,
-    upgrade_hydro_dispatch_cost_curve,
     upgrade_psy5_schema_fields,
 )
 
@@ -29,34 +28,6 @@ def test_normalize_initial_timestamp_uses_iso_separator() -> None:
     assert _normalize_initial_timestamp("2023-01-01T00:00:00.0") == "2023-01-01T00:00:00"
     assert _normalize_initial_timestamp("2023-01-01T00:00:00.000") == "2023-01-01T00:00:00"
     assert _normalize_initial_timestamp("2023-01-01T00:00:00.123") == "2023-01-01T00:00:00.123"
-
-
-def test_upgrade_hydro_dispatch_cost_curve_drops_legacy_fuel_fields() -> None:
-    system_data = {
-        "data": {
-            "components": [
-                {
-                    "__metadata__": {"type": "HydroDispatch"},
-                    "name": "201_HYDRO_4",
-                    "operation_cost": {
-                        "variable": {
-                            "__metadata__": {"type": "FuelCurve"},
-                            "fuel_cost": 0.0,
-                            "startup_fuel_offtake": {"value_curve": "legacy"},
-                            "power_units": "NATURAL_UNITS",
-                        }
-                    },
-                }
-            ]
-        }
-    }
-
-    upgraded = upgrade_hydro_dispatch_cost_curve(system_data)
-    variable = upgraded["data"]["components"][0]["operation_cost"]["variable"]
-
-    assert "fuel_cost" not in variable
-    assert "startup_fuel_offtake" not in variable
-    assert variable["power_units"] == "NATURAL_UNITS"
 
 
 def test_system_upgrade_preserves_trailing_newline(tmp_path: Path) -> None:

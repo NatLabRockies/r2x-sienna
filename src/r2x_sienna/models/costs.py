@@ -69,7 +69,7 @@ class HydroGenerationCost(OperationalCost):
             )
         ),
     ] = 0.0
-    variable: CostCurve | None = None
+    variable: Annotated[CostCurve | FuelCurve | None, Field(description="Variable production cost")] = None
 
     @classmethod
     def example(cls) -> "HydroGenerationCost":
