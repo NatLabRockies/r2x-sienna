@@ -24,7 +24,6 @@ from .enums import (
     PrimeMoversType,
     PumpHydroStatus,
     ReservoirDataType,
-    ReservoirLocation,
     StorageTechs,
     ThermalFuels,
 )
@@ -193,7 +192,7 @@ class ThermalStandard(ThermalGen):
     time_limits: Annotated[
         UpDown | None, Unit("hour"), Field(description="Minimum up and Minimum down time limits in hours")
     ] = None
-    operation_cost: Annotated[ThermalGenerationCost, Field(description="Operational cosst.")]
+    operation_cost: Annotated[ThermalGenerationCost | MarketBidCost, Field(description="Operational cost.")]
     fuel: Annotated[ThermalFuels, Field(description="Prime mover fuel according to EIA 923.")]
 
     @classmethod
@@ -383,7 +382,8 @@ class RenewableDispatch(RenewableGen):
         Field(ge=0, le=1, description="Power factor between real and apparent power."),
     ] = 1.0
     operation_cost: Annotated[
-        RenewableGenerationCost, Field(description="Operation cost for the renewable generator.")
+        RenewableGenerationCost | MarketBidCost,
+        Field(description="Operation cost for the renewable generator."),
     ]
     base_power: Annotated[
         float,
@@ -896,7 +896,7 @@ class HydroDispatch(HydroGen):
     operation_cost: Annotated[
         "HydroGenerationCost | MarketBidCost",
         Field(description="Operational cost of generation."),
-    ]
+    ] = HydroGenerationCost()
 
     @classmethod
     def example(cls) -> "HydroDispatch":
@@ -1004,7 +1004,7 @@ class HydroEnergyReservoir(HydroGen):
     operation_cost: Annotated[
         "HydroGenerationCost | StorageCost | MarketBidCost",
         Field(description="Operational cost of generation."),
-    ]
+    ] = HydroGenerationCost()
     storage_target: Annotated[
         float,
         Field(
@@ -1230,7 +1230,7 @@ class HydroPumpedStorage(HydroGen):
 
 
 class HydroReservoir(Device):
-    """A hydropower reservoir that needs to be attached to HydroTurbine(s) or HydroPumpTurbine(s) to generate power.
+    """A hydropower reservoir with attached HydroUnit components.
 
     See How to Define Hydro Generators with Reservoirs for supported configurations.
 
@@ -1248,14 +1248,6 @@ class HydroReservoir(Device):
         float,
         Field(description="Initial level of the reservoir relative to the storage_level_limits.max."),
     ]
-    max_level: Annotated[
-        float | int,
-        Field(
-            alias="Max Level",
-            description="r2x-sienna extension: maximum reservoir level retained for compatibility.",
-            ge=0,
-        ),
-    ] = 1e30
     spillage_limits: Annotated[
         MinMax | None,
         Field(
@@ -1285,29 +1277,25 @@ class HydroReservoir(Device):
         InputOutputCurve,
         Field(description="Head to volume relationship for the reservoir."),
     ] = LinearCurve(0.0)
-    reservoir_location: Annotated[
-        ReservoirLocation,
-        Field(description="r2x-sienna extension: location of the reservoir relative to the turbine."),
-    ] = ReservoirLocation.HEAD
     operation_cost: Annotated[
         HydroReservoirCost,
         Field(description="HydroReservoirCost of reservoir."),
-    ]
+    ] = HydroReservoirCost()
     level_data_type: Annotated[
         ReservoirDataType,
         Field(description="Reservoir data type, which defines units for level parameters."),
     ] = ReservoirDataType.USABLE_VOLUME
     upstream_turbines: Annotated[
         list["HydroTurbine | HydroPumpTurbine"],
-        Field(description="HydroTurbine(s) or HydroPumpTurbine(s) upstream of this reservoir."),
+        Field(description="HydroUnit(s) immediately upstream of this reservoir."),
     ] = Field(default_factory=list)
     downstream_turbines: Annotated[
         list["HydroTurbine | HydroPumpTurbine"],
-        Field(description="HydroTurbine(s) or HydroPumpTurbine(s) downstream of this reservoir."),
+        Field(description="HydroUnit(s) immediately downstream of this reservoir."),
     ] = Field(default_factory=list)
     upstream_reservoirs: Annotated[
-        list["HydroReservoir"],
-        Field(description="HydroReservoir(s) upstream of this reservoir."),
+        list[Device],
+        Field(description="Device(s) that are immediately upstream of this reservoir."),
     ] = Field(default_factory=list)
 
     @classmethod
@@ -1323,7 +1311,6 @@ class HydroReservoir(Device):
             level_targets=0.8,
             intake_elevation=500.0,
             head_to_volume_factor=LinearCurve(1.0),
-            reservoir_location=ReservoirLocation.HEAD,
             operation_cost=HydroReservoirCost(),
             level_data_type=ReservoirDataType.USABLE_VOLUME,
             category="hydro_reservoir",
@@ -1376,7 +1363,7 @@ class HydroTurbine(HydroGen):
     operation_cost: Annotated[
         "HydroGenerationCost | MarketBidCost",
         Field(description="Operational cost of generation."),
-    ]
+    ] = HydroGenerationCost()
     powerhouse_elevation: Annotated[
         float,
         Unit("m"),
@@ -1417,17 +1404,12 @@ class HydroTurbine(HydroGen):
         Unit("hour"),
         Field(description="Downstream travel time in hours."),
     ] = None
-    reservoirs: Annotated[
-        list[HydroReservoir],
-        Field(description="r2x-sienna extension: HydroReservoir(s) that this component is connected to."),
-    ] = Field(default_factory=list)
     prime_mover_type: Annotated[
         PrimeMoversType, Field(description="Prime mover technology according to EIA 923.")
     ]
 
     @classmethod
     def example(cls) -> "HydroTurbine":
-        reservoir = HydroReservoir.example()
         return HydroTurbine(
             name="hydro-turbine-test",
             available=True,
@@ -1448,13 +1430,12 @@ class HydroTurbine(HydroGen):
             prime_mover_type=PrimeMoversType.OT,
             conversion_factor=1.0,
             travel_time=2.0,
-            reservoirs=[reservoir],
             category="hydro_turbine",
         )
 
 
 class HydroPumpTurbine(HydroGen):
-    """A hydropower pumped turbine that needs to have two HydroReservoirs attached, suitable for modeling independent pumped hydro with reservoirs.
+    """A hydropower pumped turbine modeled with separate head and tail reservoirs.
 
     Components of the same type (e.g., PowerLoad) must have unique names, but components of
     different types (e.g., PowerLoad and ACBus) can have the same name.
@@ -1498,14 +1479,6 @@ class HydroPumpTurbine(HydroGen):
         Unit("m3/s"),
         Field(description="Turbine/Pump outflow limits in m3/s. Set to None if not applicable."),
     ] = None
-    head_reservoir: Annotated[
-        "HydroReservoir | None",
-        Field(description="Head HydroReservoir that this component is connected to."),
-    ] = None
-    tail_reservoir: Annotated[
-        "HydroReservoir | None",
-        Field(description="Tail HydroReservoir that this component is connected to."),
-    ] = None
     powerhouse_elevation: Annotated[
         float,
         Unit("m"),
@@ -1513,7 +1486,7 @@ class HydroPumpTurbine(HydroGen):
             ge=0,
             description="Height level in meters above the sea level of the powerhouse on which the turbine is installed.",
         ),
-    ]
+    ] = 0.0
     ramp_limits: Annotated[
         UpDown | None,
         Unit("pu/min", base="base_power"),
@@ -1561,17 +1534,17 @@ class HydroPumpTurbine(HydroGen):
         TurbinePump,
         Unit("%"),
         Field(description="Turbine/Pump efficiency [0, 1.0]."),
-    ]
+    ] = TurbinePump(turbine=1.0, pump=1.0)
     transition_time: Annotated[
         TurbinePump,
         Unit("hour"),
         Field(description="Transition time in hours to switch into the specific mode."),
-    ]
+    ] = TurbinePump(turbine=0.0, pump=0.0)
     minimum_time: Annotated[
         TurbinePump,
         Unit("hour"),
         Field(description="Minimum operating time in hours for the specific mode."),
-    ]
+    ] = TurbinePump(turbine=0.0, pump=0.0)
     conversion_factor: Annotated[
         float,
         Field(ge=0, description="Conversion factor from flow/volume to energy: m^3 -> p.u-hr."),
@@ -1582,42 +1555,10 @@ class HydroPumpTurbine(HydroGen):
     ] = False
     prime_mover_type: Annotated[
         PrimeMoversType, Field(description="Prime mover technology according to EIA 923.")
-    ]
+    ] = PrimeMoversType.PS
 
     @classmethod
     def example(cls) -> "HydroPumpTurbine":
-        head_reservoir = HydroReservoir(
-            name="head_reservoir",
-            available=True,
-            storage_level_limits=MinMax(min=500.0, max=2000.0),
-            initial_level=0.7,
-            spillage_limits=MinMax(min=0.0, max=200.0),
-            inflow=30.0,
-            outflow=0.0,
-            level_targets=0.8,
-            intake_elevation=800.0,
-            head_to_volume_factor=LinearCurve(1.0),
-            reservoir_location=ReservoirLocation.HEAD,
-            operation_cost=HydroReservoirCost(),
-            level_data_type=ReservoirDataType.USABLE_VOLUME,
-            category="hydro_reservoir",
-        )
-        tail_reservoir = HydroReservoir(
-            name="tail_reservoir",
-            available=True,
-            storage_level_limits=MinMax(min=100.0, max=800.0),
-            initial_level=0.5,
-            spillage_limits=MinMax(min=0.0, max=100.0),
-            inflow=0.0,
-            outflow=20.0,
-            level_targets=0.5,
-            intake_elevation=400.0,
-            head_to_volume_factor=LinearCurve(1.0),
-            reservoir_location=ReservoirLocation.TAIL,
-            operation_cost=HydroReservoirCost(),
-            level_data_type=ReservoirDataType.USABLE_VOLUME,
-            category="hydro_reservoir",
-        )
         return HydroPumpTurbine(
             name="hydro-pump-turbine-test",
             available=True,
@@ -1629,8 +1570,6 @@ class HydroPumpTurbine(HydroGen):
             reactive_power_limits=MinMax(min=-150.0, max=150.0),
             active_power_limits_pump=MinMax(min=50.0, max=400.0),
             outflow_limits=MinMax(min=10.0, max=200.0),
-            head_reservoir=head_reservoir,
-            tail_reservoir=tail_reservoir,
             powerhouse_elevation=600.0,
             ramp_limits=UpDown(up=25.0, down=25.0),
             time_limits=UpDown(up=1.0, down=1.0),

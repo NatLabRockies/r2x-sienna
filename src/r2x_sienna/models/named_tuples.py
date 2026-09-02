@@ -1,5 +1,6 @@
 from infrasys.models import InfraSysBaseModel
 from pint import Quantity
+from pydantic import AliasChoices, Field
 
 
 class GeoLocation(InfraSysBaseModel):
@@ -25,13 +26,13 @@ class Complex(InfraSysBaseModel):
 
 
 class InputOutput(InfraSysBaseModel):
-    input: float
-    output: float
+    input: float = Field(validation_alias=AliasChoices("input", "in"))
+    output: float = Field(validation_alias=AliasChoices("output", "out"))
 
 
 class FromTo_ToFrom(InfraSysBaseModel):
-    from_to: float | Quantity
-    to_from: float | Quantity
+    from_to: float | Quantity = Field(validation_alias=AliasChoices("from_to", "from"))
+    to_from: float | Quantity = Field(validation_alias=AliasChoices("to_from", "to"))
 
 
 class StartShut(InfraSysBaseModel):
