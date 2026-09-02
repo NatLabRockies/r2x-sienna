@@ -238,6 +238,34 @@ def system_data_has_right_keys(system_data: dict[str, Any]) -> bool:
     return bool(system_data.get("data", {}).get("components"))
 
 
+@SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=101)
+def upgrade_hydro_dispatch_cost_curve(system_data: dict[str, Any]) -> dict[str, Any]:
+    """Convert legacy hydro FuelCurve payloads to the supported CostCurve shape."""
+    if not system_data_has_right_keys(system_data):
+        logger.debug("No data found. Skipping step")
+        return system_data
+
+    for comp in system_data["data"]["components"]:
+        if comp.get("__metadata__", {}).get("type") != "HydroDispatch":
+            continue
+
+        operation_cost = comp.get("operation_cost")
+        variable = operation_cost.get("variable") if isinstance(operation_cost, dict) else None
+        variable_metadata = variable.get("__metadata__", {}) if isinstance(variable, dict) else {}
+        if not isinstance(variable, dict) or variable_metadata.get("type") != "FuelCurve":
+            continue
+
+        variable.pop("fuel_cost", None)
+        variable.pop("startup_fuel_offtake", None)
+        logger.warning(
+            "HydroDispatch {} uses a FuelCurve; dropping unsupported fuel-specific fields.",
+            comp.get("name", "<unknown>"),
+        )
+
+    logger.debug("Completed HydroDispatch cost curve upgrade step.")
+    return system_data
+
+
 @SiennaUpgrader.register_step(target_version="5.999", upgrade_type=UpgradeType.SYSTEM, priority=100)
 def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any]:
     """Upgrade HydroEnergyReservoir components into HydroReservoir and HydroTurbine components.
