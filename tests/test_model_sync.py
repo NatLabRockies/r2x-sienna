@@ -14,8 +14,9 @@ from r2x_sienna.models import (
     ReserveDemandCurve,
     VariableReserveNonSpinning,
 )
+from r2x_sienna.models.core import Device
 from r2x_sienna.models.costs import HydroGenerationCost, HydroReservoirCost
-from r2x_sienna.models.named_tuples import TurbinePump
+from r2x_sienna.models.named_tuples import FromTo_ToFrom, InputOutput, TurbinePump
 
 
 def test_hydro_travel_time_is_turbine_field_only():
@@ -98,6 +99,31 @@ def test_hydro_pump_turbine_accepts_travel_time_and_round_trips_json():
     round_tripped = HydroPumpTurbine.model_validate_json(turbine.model_dump_json(round_trip=True))
 
     assert round_tripped.travel_time == 0.5
+
+
+def test_hydro_pump_turbine_matches_current_sienna_fields():
+    assert "head_reservoir" not in HydroPumpTurbine.model_fields
+    assert "tail_reservoir" not in HydroPumpTurbine.model_fields
+    assert HydroPumpTurbine.model_fields["active_power_pump"].default == 0.0
+    assert HydroPumpTurbine.model_fields["powerhouse_elevation"].default == 0.0
+    assert HydroPumpTurbine.model_fields["efficiency"].default == TurbinePump(turbine=1.0, pump=1.0)
+    assert HydroPumpTurbine.model_fields["transition_time"].default == TurbinePump(turbine=0.0, pump=0.0)
+    assert HydroPumpTurbine.model_fields["minimum_time"].default == TurbinePump(turbine=0.0, pump=0.0)
+    assert HydroPumpTurbine.model_fields["conversion_factor"].default == 1.0
+    assert HydroPumpTurbine.model_fields["must_run"].default is False
+    assert HydroPumpTurbine.model_fields["prime_mover_type"].default is PrimeMoversType.PS
+
+
+def test_current_psy_tuple_keys_are_accepted():
+    assert InputOutput.model_validate({"in": 0.9, "out": 0.8}).input == 0.9
+    assert FromTo_ToFrom.model_validate({"from": 0.01, "to": 0.02}).to_from == 0.02
+
+
+def test_hydro_reservoir_matches_current_sienna_fields():
+    assert "max_level" not in HydroReservoir.model_fields
+    assert "reservoir_location" not in HydroReservoir.model_fields
+    assert HydroReservoir.model_fields["operation_cost"].default is not None
+    assert HydroReservoir.model_fields["upstream_reservoirs"].annotation == list[Device]
 
 
 @pytest.mark.parametrize(

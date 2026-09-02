@@ -35,9 +35,9 @@ def test_hydro_upgrade(old_system_data):
         f"'travel_time' field found in reservoir. Available fields: {reservoir_fields}"
     )
 
-    turbine_fields = list(turbine.keys())
-    assert "reservoirs" in turbine, (
-        f"'reservoirs' field not found in turbine. Available fields: {turbine_fields}"
+    reservoir_fields = list(reservoir.keys())
+    assert "downstream_turbines" in reservoir, (
+        f"'downstream_turbines' field not found in reservoir. Available fields: {reservoir_fields}"
     )
     assert turbine["travel_time"] == 2.5
 

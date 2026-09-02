@@ -48,7 +48,7 @@ def tail_reservoir():
 
 
 @pytest.fixture
-def hydro_pump_turbine(bus, head_reservoir, tail_reservoir):
+def hydro_pump_turbine(bus):
     return HydroPumpTurbine(
         name="PumpTurbine1",
         available=True,
@@ -58,8 +58,6 @@ def hydro_pump_turbine(bus, head_reservoir, tail_reservoir):
         rating=100.0,
         active_power_limits=MinMax(min=0.0, max=100.0),
         active_power_limits_pump=MinMax(min=0.0, max=100.0),
-        head_reservoir=head_reservoir,
-        tail_reservoir=tail_reservoir,
         powerhouse_elevation=100.0,
         base_power=100.0,
         active_power_pump=50.0,
@@ -99,13 +97,11 @@ def test_head_tail_reservoir_fields(head_reservoir, tail_reservoir):
     assert tail_reservoir.storage_level_limits.min == 0.0
 
 
-def test_single_pump_turbine_single_reservoir(
-    hydro_pump_system, hydro_pump_turbine, head_reservoir, tail_reservoir
-):
-    hydro_pump_turbine.head_reservoir = head_reservoir
-    hydro_pump_turbine.tail_reservoir = tail_reservoir
-    assert hydro_pump_turbine.head_reservoir == head_reservoir
-    assert hydro_pump_turbine.tail_reservoir == tail_reservoir
+def test_pump_turbine_does_not_own_reservoir_references(hydro_pump_turbine):
+    assert "head_reservoir" not in HydroPumpTurbine.model_fields
+    assert "tail_reservoir" not in HydroPumpTurbine.model_fields
+    assert not hasattr(hydro_pump_turbine, "head_reservoir")
+    assert not hasattr(hydro_pump_turbine, "tail_reservoir")
 
 
 def test_multiple_pump_turbines_single_reservoir(bus, head_reservoir, tail_reservoir):
@@ -125,8 +121,6 @@ def test_multiple_pump_turbines_single_reservoir(bus, head_reservoir, tail_reser
             rating=100.0,
             active_power_limits=MinMax(min=0.0, max=100.0),
             active_power_limits_pump=MinMax(min=0.0, max=100.0),
-            head_reservoir=head_reservoir,
-            tail_reservoir=tail_reservoir,
             powerhouse_elevation=100.0,
             prime_mover_type=PrimeMoversType.PS,
             operation_cost=HydroGenerationCost.example(),
@@ -140,7 +134,3 @@ def test_multiple_pump_turbines_single_reservoir(bus, head_reservoir, tail_reser
 
     collected_turbines = list(sys.get_components(HydroPumpTurbine))
     assert len(turbines) == len(collected_turbines)
-
-    for turbine in collected_turbines:
-        assert turbine.head_reservoir == head_reservoir
-        assert turbine.tail_reservoir == tail_reservoir
