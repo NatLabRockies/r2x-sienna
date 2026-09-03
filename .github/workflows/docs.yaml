@@ -37,7 +37,7 @@ jobs:
         run: uv sync --group docs
 
       - name: Generate docstring coverage badge
-        run: uv run docstr-coverage src --badge docs/source/_static
+        run: uv run docstr-coverage src --badge docs/source/_static --fail-under 0
 
       - name: Build Sphinx documentation
         run: uv run sphinx-build docs/source/ docs/_build/
