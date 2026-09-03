@@ -61,6 +61,17 @@ dev = [
   "ruff>=0.9.3",
   "ty>=0.0.2",
 ]
+docs = [
+  "autodoc-pydantic",
+  "docstr-coverage>=2.3.2",
+  "furo",
+  "ghp-import",
+  "myst-parser",
+  "sphinx>=8.0.0",
+  "sphinx-copybutton",
+  "sphinx-reports",
+  "sphinx-tabs",
+]
 
 [tool.ruff]
 line-length = 110
