@@ -80,13 +80,13 @@ def test_hydro_reservoir_fields_set(hydro_reservoir):
 
 def test_single_turbine_single_reservoir(test_hydro_reservoir_system, hydro_turbine, hydro_reservoir):
     system = test_hydro_reservoir_system
-    hydro_turbine.reservoirs = [hydro_reservoir]
-    assert hydro_turbine.reservoirs == [hydro_reservoir]
+    hydro_reservoir.downstream_turbines = [hydro_turbine]
+    assert hydro_reservoir.downstream_turbines == [hydro_turbine]
 
     system.remove_component(hydro_reservoir)
 
-    hydro_turbine.reservoirs = []
-    assert hydro_turbine.reservoirs == []
+    hydro_reservoir.downstream_turbines = []
+    assert hydro_reservoir.downstream_turbines == []
 
 
 def test_multiple_turbines_single_reservoir(bus, hydro_reservoir):
@@ -109,7 +109,7 @@ def test_multiple_turbines_single_reservoir(bus, hydro_reservoir):
             operation_cost=HydroGenerationCost.example(),
             prime_mover_type=PrimeMoversType.OT,
         )
-        turbine.reservoirs = [hydro_reservoir]
+        hydro_reservoir.downstream_turbines.append(turbine)
         sys.add_component(turbine)
         turbines.append(turbine)
 
@@ -117,4 +117,4 @@ def test_multiple_turbines_single_reservoir(bus, hydro_reservoir):
     assert len(turbines) == len(collected_turbines)
 
     for turbine in collected_turbines:
-        assert turbine.reservoirs == [hydro_reservoir]
+        assert turbine in hydro_reservoir.downstream_turbines

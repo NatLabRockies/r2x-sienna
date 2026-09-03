@@ -287,6 +287,8 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
             "ext": ext,
         }
 
+        turbine_uuid = str(uuid.uuid4())
+        reservoir["downstream_turbines"] = [{"value": turbine_uuid}]
         turbine = {
             "type": "HydroTurbine",
             "name": f"{comp['name']}_Turbine",
@@ -307,13 +309,12 @@ def upgrade_hydro_energy_reservoir(system_data: dict[str, Any]) -> dict[str, Any
             "turbine_type": ext.get("turbine_type"),
             "conversion_factor": ext.get("conversion_factor", 1.0),
             "travel_time": comp.get("travel_time"),
-            "reservoirs": [{"value": reservoir_uuid}],
             "prime_mover_type": str(PrimeMoversType.HY),
             "services": ext.get("services", []),
             "dynamic_injector": ext.get("dynamic_injector"),
             "ext": ext,
             "__metadata__": {"module": "PowerSystems", "type": "HydroTurbine"},
-            "internal": {"uuid": {"value": str(uuid.uuid4())}},
+            "internal": {"uuid": {"value": turbine_uuid}},
         }
 
         new_components.extend([reservoir, turbine])
@@ -392,7 +393,12 @@ def upgrade_hydro_pumped_storage(system_data: dict[str, Any]) -> dict[str, Any]:
             "inflow": comp.get("inflow", 0.0),
             "outflow": 0.0,
             "level_targets": comp.get("storage_target", {}).get("up"),
+            "spillage_limits": None,
+            "intake_elevation": ext.get("intake_elevation", 0.0),
+            "head_to_volume_factor": LinearCurve(0.0).model_dump(round_trip=True),
+            "level_data_type": str(ReservoirDataType.USABLE_VOLUME),
             "ext": ext,
+            "downstream_turbines": [{"value": pump_turbine_uuid}],
             "internal": {"uuid": {"value": head_uuid}},
         }
 
@@ -408,7 +414,12 @@ def upgrade_hydro_pumped_storage(system_data: dict[str, Any]) -> dict[str, Any]:
             "inflow": 0.0,
             "outflow": comp.get("outflow", 0.0),
             "level_targets": comp.get("storage_target", {}).get("down"),
+            "spillage_limits": None,
+            "intake_elevation": ext.get("intake_elevation", 0.0),
+            "head_to_volume_factor": LinearCurve(0.0).model_dump(round_trip=True),
+            "level_data_type": str(ReservoirDataType.USABLE_VOLUME),
             "ext": ext,
+            "upstream_turbines": [{"value": pump_turbine_uuid}],
             "internal": {"uuid": {"value": tail_uuid}},
         }
 
@@ -428,8 +439,6 @@ def upgrade_hydro_pumped_storage(system_data: dict[str, Any]) -> dict[str, Any]:
             "time_limits_pump": comp.get("time_limits_pump"),
             "reactive_power_limits": comp.get("reactive_power_limits"),
             "reactive_power_limits_pump": comp.get("reactive_power_limits_pump"),
-            "head_reservoir": {"value": head_uuid},
-            "tail_reservoir": {"value": tail_uuid},
             "powerhouse_elevation": ext.get("powerhouse_elevation", 0.0),
             "base_power": comp.get("base_power"),
             "operation_cost": comp.get("operation_cost"),

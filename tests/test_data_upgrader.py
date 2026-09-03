@@ -3,11 +3,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from infrasys.cost_curves import FuelCurve, UnitSystem
+from infrasys.value_curves import LinearCurve
 from r2x_core import UpgradeStep, UpgradeType
 from rust_ok import Err, Ok
 
 from r2x_sienna import plugins
 from r2x_sienna.logger import timeit
+from r2x_sienna.models.costs import HydroGenerationCost
 from r2x_sienna.upgrader import data_upgrader, upgrade_steps
 from r2x_sienna.upgrader.data_upgrader import (
     SiennaUpgrader,
@@ -28,6 +31,52 @@ def test_normalize_initial_timestamp_uses_iso_separator() -> None:
     assert _normalize_initial_timestamp("2023-01-01T00:00:00.0") == "2023-01-01T00:00:00"
     assert _normalize_initial_timestamp("2023-01-01T00:00:00.000") == "2023-01-01T00:00:00"
     assert _normalize_initial_timestamp("2023-01-01T00:00:00.123") == "2023-01-01T00:00:00.123"
+
+
+def test_hydro_generation_cost_accepts_fuel_curve() -> None:
+    fuel_curve = FuelCurve(value_curve=LinearCurve(10), power_units=UnitSystem.NATURAL_UNITS)
+
+    cost = HydroGenerationCost(variable=fuel_curve)
+
+    assert cost.variable is fuel_curve
+    assert cost.variable_type == "FuelCurve"
+
+
+def test_system_upgrade_preserves_hydro_dispatch_fuel_curve(tmp_path: Path) -> None:
+    json_path = tmp_path / "system.json"
+    system_data = {
+        "data_format_version": "1.0.0",
+        "data": {
+            "components": [
+                {
+                    "__metadata__": {"type": "HydroDispatch"},
+                    "name": "hydro",
+                    "operation_cost": {
+                        "__metadata__": {"type": "HydroGenerationCost"},
+                        "variable": {
+                            "__metadata__": {"type": "FuelCurve"},
+                            "fuel_cost": 2.5,
+                            "startup_fuel_offtake": {"value_curve": "legacy"},
+                        },
+                    },
+                }
+            ]
+        },
+    }
+    json_path.write_text(json.dumps(system_data), encoding="utf-8")
+
+    result = SiennaUpgrader(json_path).upgrade(
+        current_version="1.0.0",
+        target_version="5.999",
+        upgrade_type=UpgradeType.SYSTEM,
+    )
+
+    assert result.is_ok(), result.err()
+    upgraded = json.loads(json_path.read_text(encoding="utf-8"))
+    variable = upgraded["data"]["components"][0]["operation_cost"]["variable"]
+    assert variable["__metadata__"]["type"] == "FuelCurve"
+    assert variable["fuel_cost"] == 2.5
+    assert variable["startup_fuel_offtake"] == {"value_curve": "legacy"}
 
 
 def test_system_upgrade_preserves_trailing_newline(tmp_path: Path) -> None:
