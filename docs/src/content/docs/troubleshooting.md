@@ -28,7 +28,7 @@ r2x install r2x-sienna
 Repeat `list` and check generated help before executing:
 
 ```bash
-r2x run plugin sienna-parser --show-help
+r2x run sienna-parser --help
 ```
 
 **Runtime startup instead mentions Python ABI:** compare `r2x --version` and

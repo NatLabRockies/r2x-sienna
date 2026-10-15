@@ -15,47 +15,15 @@ flowchart LR
   P --> Z["system.zip<br/>inspect with r2x read"]
 ```
 
-## 1. Prepare the runtime
+## 1. Confirm the prerequisites
 
-Install [r2x-cli](https://github.com/NatLabRockies/r2x-cli#quick-start) and
-[uv](https://docs.astral.sh/uv/getting-started/installation/). You also need a shell
-with `curl`; the commands below use macOS/Linux syntax.
-No Julia installation is needed for this Python serialization exercise.
-Confirm the CLI version:
+Complete [Installation](/r2x-sienna/getting-started/installation/),
+[environment setup](/r2x-sienna/getting-started/environment/) and
+[verification](/r2x-sienna/getting-started/verify/) first.
+The CLI must discover `sienna-parser` and `sienna-exporter` in its managed environment.
 
-```bash
-r2x --version
-```
-
-Install the Python runtime supported by that binary:
-
-```bash
-r2x python install
-```
-
-Check which environment the CLI will actually use:
-
-```bash
-r2x python show
-```
-
-Install the format package into that managed environment, rather than an unrelated
-project environment. Its [R2X Core](https://github.com/NatLabRockies/r2x-core)
-and [Infrasys](https://github.com/NatLabRockies/infrasys) dependencies supply the
-plugin lifecycle and system/time-series storage.
-
-```bash
-r2x install r2x-sienna
-```
-
-Confirm the two entry points are available:
-
-```bash
-r2x list r2x-sienna
-```
-
-Look for `sienna-parser` and `sienna-exporter`. If either is absent, fix
-[plugin discovery](/r2x-sienna/troubleshooting/#plugin-is-missing) before continuing.
+This tutorial uses a macOS/Linux shell, `curl`, network access for the pinned
+downloads, and a new working directory. A Julia installation is not required. Use disposable JSON/HDF5 copies because parser upgrades may rewrite input files.
 
 ## 2. Download a small, reproducible input
 

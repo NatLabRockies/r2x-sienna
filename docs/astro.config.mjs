@@ -28,6 +28,23 @@ export default defineConfig({
     customCss: ["./src/styles/brand.css"],
     sidebar: [
   {
+    "label": "Getting started",
+    "items": [
+      {
+        "label": "Installation",
+        "link": "/getting-started/installation/"
+      },
+      {
+        "label": "Environment and prerequisites",
+        "link": "/getting-started/environment/"
+      },
+      {
+        "label": "Verify installation and first use",
+        "link": "/getting-started/verify/"
+      }
+    ]
+  },
+  {
     "label": "Tutorials",
     "items": [
       {
@@ -44,14 +61,13 @@ export default defineConfig({
     "label": "How-to guides",
     "items": [
       {
-        "label": "Installation",
-        "link": "/how-to/install/"
-      },
-      {
         "label": "Python workflow",
         "link": "/how-to/python/"
       },
-      {"label": "Inspect an archive", "link": "/how-to/inspect-system/"},
+      {
+        "label": "Inspect an archive",
+        "link": "/how-to/inspect-system/"
+      },
       {
         "label": "CLI pipeline",
         "link": "/how-to/pipeline/"
@@ -65,9 +81,18 @@ export default defineConfig({
         "label": "Public API and configuration",
         "link": "/reference/"
       },
-      {"label": "Model catalog", "link": "/reference/models/"},
-      {"label": "Units", "link": "/reference/units/"},
-      {"label": "Functions and curves", "link": "/reference/functions/"},
+      {
+        "label": "Model catalog",
+        "link": "/reference/models/"
+      },
+      {
+        "label": "Units",
+        "link": "/reference/units/"
+      },
+      {
+        "label": "Functions and curves",
+        "link": "/reference/functions/"
+      },
       {
         "label": "Versions",
         "link": "/reference/versions/"
@@ -81,8 +106,14 @@ export default defineConfig({
         "label": "Data flow and compatibility",
         "link": "/explanation/"
       },
-      {"label": "Upgrader design", "link": "/explanation/upgrader/"},
-      {"label": "Models and units", "link": "/explanation/models-and-units/"}
+      {
+        "label": "Upgrader design",
+        "link": "/explanation/upgrader/"
+      },
+      {
+        "label": "Models and units",
+        "link": "/explanation/models-and-units/"
+      }
     ]
   },
   {

@@ -2,13 +2,13 @@
 title: "Configure CLI pipelines"
 ---
 
-Install the package into the [CLI environment](/r2x-sienna/how-to/install/) first.
+Install the package into the [CLI environment](/r2x-sienna/getting-started/installation/) first.
 Plugin references come from the `[project.entry-points."r2x_plugin"]` table in [pyproject.toml](https://github.com/NatLabRockies/r2x-sienna/blob/main/pyproject.toml).
 
 ```bash
 r2x list r2x-sienna
-r2x run plugin sienna-parser --show-help
-r2x run plugin sienna-exporter --show-help
+r2x run sienna-parser --help
+r2x run sienna-exporter --help
 ```
 
 The generated help reflects the installed package's configuration schema.
