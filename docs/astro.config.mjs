@@ -14,6 +14,12 @@ export default defineConfig({
 },
   integrations: [starlight({
     title: "r2x-sienna",
+    logo: {
+      light: "./src/assets/r2x-logo-full-color.svg",
+      dark: "./src/assets/r2x-logo-white.svg",
+      alt: "R2X",
+      replacesTitle: false,
+    },
     social: [{ icon: "github", label: "GitHub", href: "https://github.com/NatLabRockies/r2x-sienna" }],
     editLink: { baseUrl: "https://github.com/NatLabRockies/r2x-sienna/edit/main/docs/src/content/docs/" },
     customCss: ["./src/styles/brand.css"],

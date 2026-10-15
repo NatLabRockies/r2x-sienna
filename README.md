@@ -1,8 +1,12 @@
-# r2x-sienna
+<img src="./docs/src/assets/r2x-logo-full-square.svg" alt="R2X framework logo" align="left" width="220px" height="220px" hspace="10"/>
+
+#### r2x-sienna
 
 Sienna models, parser, and exporter for the R2X ecosystem.
 
 [![PyPI](https://img.shields.io/pypi/v/r2x-sienna.svg)](https://pypi.org/project/r2x-sienna/) [![Docs](https://img.shields.io/badge/docs-guides-0079c2)](https://natlabrockies.github.io/r2x-sienna/)
+
+<br clear="left">
 
 `r2x-sienna` reads Sienna/PowerSystems JSON into typed R2X systems and exports systems back to Sienna.
 Use [r2x-cli](https://github.com/NatLabRockies/r2x-cli) for repeatable pipelines and [R2X translation plugins](https://natlabrockies.github.io/R2X/) for cross-format mappings.
