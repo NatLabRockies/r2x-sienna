@@ -92,10 +92,6 @@ export default defineConfig({
       {
         "label": "Functions and curves",
         "link": "/reference/functions/"
-      },
-      {
-        "label": "Versions",
-        "link": "/reference/versions/"
       }
     ]
   },
@@ -103,7 +99,7 @@ export default defineConfig({
     "label": "Explanation",
     "items": [
       {
-        "label": "Data flow and compatibility",
+        "label": "Sienna upgrades and storage",
         "link": "/explanation/"
       },
       {
@@ -127,12 +123,7 @@ export default defineConfig({
   },
   {
     "label": "Changelog",
-    "items": [
-      {
-        "label": "Release history",
-        "link": "/changelog/"
-      }
-    ]
+    "link": "/changelog/"
   },
   {
     "label": "Contributors",
