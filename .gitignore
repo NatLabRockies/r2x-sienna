@@ -173,3 +173,7 @@ cython_debug/
 #.idea/
 
 .DS_Store
+
+# Astro documentation
+docs/node_modules/
+docs/.astro/
