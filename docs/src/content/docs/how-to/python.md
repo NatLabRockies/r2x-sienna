@@ -2,9 +2,15 @@
 title: "Parse, inspect, and export with Python"
 ---
 
-Run this example from a disposable repository checkout after installing `r2x-sienna` into your active Python environment.
-The fixture and its companions are included under `tests/data/`.
-Parsing may update legacy JSON/HDF5 data in place. Keep your original files separate.
+Start from the downloaded inputs in the [round-trip tutorial](/r2x-sienna/tutorials/round-trip/).
+Install `r2x-sienna` into your active Python environment with
+`python -m pip install r2x-sienna`. The CLI's managed environment is separate;
+use its printed interpreter if you want the exact same dependencies.
+
+The example creates a parser context, runs it, inspects its returned System,
+and sends that System to a separate exporter context. Export configuration does
+not retroactively change parser settings. Keep JSON and HDF5 working copies together because upgrades can modify them.
+Save this as `python_roundtrip.py` in the tutorial workspace:
 
 ```python
 from pathlib import Path
@@ -12,7 +18,7 @@ from pathlib import Path
 from r2x_core import DataStore, PluginContext
 from r2x_sienna import SiennaConfig, SiennaExporterConfig, SiennaParser, SiennaExporter
 
-json_path = Path("tests/data/2area-5bus-system/test_system.json").resolve()
+json_path = Path("inputs/test_system.json").resolve()
 context = PluginContext(
     config=SiennaConfig(json_path=str(json_path), system_name="Two-area", model_year=2029),
     store=DataStore(path=json_path.parent),
@@ -33,6 +39,17 @@ export_context = PluginContext(
 SiennaExporter.from_context(export_context).run()
 assert output.is_file()
 ```
+
+Execute with the activated interpreter:
+
+```bash
+python python_roundtrip.py
+```
+
+The script prints the system name and asserts that the native output exists.
+For component counts and archive inspection, follow the
+[inspection guide](/r2x-sienna/how-to/inspect-system/). To distinguish schema validation
+from hook failure, read the [lifecycle contract](/r2x-sienna/reference/#construction-and-execution-signatures).
 
 `from_context(ctx)` constructs a plugin bound to that context. `run()` returns the updated `PluginContext`; lifecycle failures raise `r2x_core.PluginError`.
 Do not treat its return value as a `Result` or call individual lifecycle hooks to bypass normal ordering.

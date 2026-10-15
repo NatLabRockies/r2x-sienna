@@ -53,7 +53,7 @@ Runs registered system upgrade steps using a parser context. `json_path` takes
 precedence over `store`; one of them must be supplied. The helper also upgrades
 referenced HDF5 time-series metadata when the JSON points to a storage file.
 
-### `SiennaVersionDetector.read_version(path)`
+### `SiennaVersionDetector().read_version(folder_path)`
 
 Reads the data version from `data_format_version` or the legacy
 `data.version_info.version` location.
