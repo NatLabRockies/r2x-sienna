@@ -140,22 +140,30 @@ native PSY JSON to `r2x read` as if it were an Infrasys serialization.
 
 ## 5. Inspect the graph, not just the filenames
 
-Save this as `inspect_system.py` beside `pipeline.yaml`:
+Copy the console input below without `>>>`/`...` prompts into `inspect_system.py` beside `pipeline.yaml`:
 
-```python
-from infrasys import Component
-from r2x_sienna.models import ACBus, PowerLoad
-print("System:", sys.name)
-print("Components:", len(list(sys.get_components(Component))))
-print("Buses:", len(list(sys.get_components(ACBus))))
-loads = list(sys.get_components(PowerLoad))
-print("Loads:", len(loads))
-if loads:
-    print("First load:", loads[0].name)
-    print("Fields:", list(type(loads[0]).model_fields))
-    for series in sys.list_time_series(loads[0]):
-        print("Series:", series.name, series.initial_timestamp, series.resolution)
-        print("First values:", series.data[:3])
+```python doctest
+>>> from infrasys import Component
+>>> from r2x_sienna.models import ACBus, PowerLoad
+>>> print("System:", sys.name)
+System: Two-area
+>>> assert len(list(sys.get_components(Component))) == 53
+>>> print("Components:", len(list(sys.get_components(Component))))
+Components: 53
+>>> print("Buses:", len(list(sys.get_components(ACBus))))
+Buses: 10
+>>> loads = list(sys.get_components(PowerLoad))
+>>> print("Loads:", len(loads))
+Loads: 6
+>>> if loads:
+...     print("First load:", loads[0].name)
+...     print("Fields:", list(type(loads[0]).model_fields))
+...     for series in sys.list_time_series(loads[0]):
+...         print("Series:", series.name, series.initial_timestamp, series.resolution)
+...         print("First values:", series.data[:3])
+...
+First load: Load-nodeD2
+Fields: ['uuid', 'name', 'available', 'category', 'ext', 'services', 'dynamic_injector', 'bus', 'active_power', 'reactive_power', 'max_active_power', 'max_reactive_power', 'base_power', 'conformity']
 ```
 
 `r2x read` supplies the loaded system as `sys`. The imports select the actual

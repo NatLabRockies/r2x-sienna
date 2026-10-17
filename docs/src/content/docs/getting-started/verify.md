@@ -13,15 +13,15 @@ Use the activated interpreter to print the installed distribution version:
 python -c "from importlib.metadata import version; print(version('r2x-sienna'))"
 ```
 
-Expect a version string. Save this short import/configuration check as
+Expect a version string. Copy the console input below without prompts into
 `verify_installation.py`:
 
-```python
-from r2x_sienna import SiennaConfig, SiennaParser, SiennaExporter
-
-config = SiennaConfig(system_name="demo")
-print(config.system_name, config.system_base_power)
-print(SiennaParser.__name__, SiennaExporter.__name__)
+```python doctest
+>>> from r2x_sienna import SiennaConfig, SiennaParser, SiennaExporter
+>>> config = SiennaConfig(system_name="demo")
+>>> assert (config.system_name, config.system_base_power) == ("demo", 100.0)
+>>> assert SiennaParser.__name__ == "SiennaParser"
+>>> assert SiennaExporter.__name__ == "SiennaExporter"
 ```
 
 Run it in the same environment:
@@ -30,12 +30,7 @@ Run it in the same environment:
 python verify_installation.py
 ```
 
-Expected output:
-
-```text
-demo 100.0
-SiennaParser SiennaExporter
-```
+Successful execution produces no output: all assertions pass.
 
 This confirms that the public classes import and that basic configuration
 validation works. It does not validate an external XML/JSON model or any profile data.

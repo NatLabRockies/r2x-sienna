@@ -22,7 +22,7 @@ The parser supplies `context.system`; the exporter consumes it and writes files.
 
 ## Configuration fields
 
-These are the package-specific settings. Inherited settings and validation are defined by [R2X Core](https://github.com/NatLabRockies/r2x-core/blob/main/src/r2x_core/plugin_config.py).
+These are the package-specific settings. Inherited settings and validation are defined by [r2x-core](https://github.com/NatLabRockies/r2x-core/blob/main/src/r2x_core/plugin_config.py).
 
 | Field | Meaning |
 | --- | --- |
@@ -37,11 +37,10 @@ These are the package-specific settings. Inherited settings and validation are d
 
 Inspect the installed schema rather than assuming current defaults apply to an older release:
 
-```python
-from r2x_sienna import SiennaConfig, SiennaExporterConfig
-
-print(SiennaConfig.model_json_schema())
-print(SiennaExporterConfig.model_json_schema())
+```python doctest
+>>> from r2x_sienna import SiennaConfig, SiennaExporterConfig
+>>> assert "properties" in SiennaConfig.model_json_schema()
+>>> assert "properties" in SiennaExporterConfig.model_json_schema()
 ```
 
 ## Model and helper modules
@@ -52,7 +51,7 @@ Follow [Python usage](/r2x-sienna/how-to/python/) for a complete context example
 
 ## Construction and execution signatures
 
-```python
+```text
 SiennaParser.from_context(ctx: PluginContext[ConfigT]) -> Plugin[ConfigT]
 SiennaExporter.from_context(ctx: PluginContext[ConfigT]) -> Plugin[ConfigT]
 plugin.run(*, ctx: PluginContext[ConfigT] | None = None) -> PluginContext[ConfigT]
@@ -71,7 +70,7 @@ validating YAML. Package fields listed above do not replace inherited Core optio
 
 ## Standalone version and upgrade API
 
-```python
+```text
 SiennaVersionDetector().read_version(folder_path: Path) -> str | None
 SiennaUpgrader(path: Path).upgrade(
     *,

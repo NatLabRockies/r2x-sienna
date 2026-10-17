@@ -27,8 +27,9 @@ title: "Units Reference"
 
 A custom currency unit is registered:
 
-```python
-ureg.define("usd = []")
+```python doctest
+>>> from r2x_sienna.units import ureg
+>>> assert (1 * ureg.usd).magnitude == 1
 ```
 
 ## Utility Helpers
@@ -44,11 +45,11 @@ This is used by getters/serializers to support code paths that accept both quant
 
 ## Typical Usage in Models/Scripts
 
-```python
-from r2x_sienna.units import ureg
-from r2x_sienna.models import ACBus
-
-bus = ACBus(name="Bus1", number=1, base_voltage=138 * ureg.kV)
+```python doctest
+>>> from r2x_sienna.units import ureg
+>>> from r2x_sienna.models import ACBus
+>>> bus = ACBus(name="Bus1", number=1, base_voltage=138 * ureg.kV)
+>>> assert bus.base_voltage.to("kilovolt").magnitude == 138
 ```
 
 ## Per-unit Considerations

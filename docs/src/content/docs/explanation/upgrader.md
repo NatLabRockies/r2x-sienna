@@ -33,15 +33,7 @@ it is passed to a parser context when compatibility transformations are needed.
 
 Steps are registered with the `SiennaUpgrader.register_step` decorator:
 
-```python
-@SiennaUpgrader.register_step(
-    target_version="5.999",
-    upgrade_type=UpgradeType.SYSTEM,
-    priority=100,
-)
-def upgrade_example(system_data):
-    return system_data
-```
+The [registered step definitions](https://github.com/NatLabRockies/r2x-sienna/blob/main/src/r2x_sienna/upgrader/upgrade_steps.py) provide the concrete transformations; custom registration changes process-wide upgrader behavior.
 
 Each step declares:
 
@@ -107,17 +99,16 @@ is attempted.
 Use `SiennaUpgrader` directly when an application needs to upgrade data before
 constructing a parser context:
 
-```python
-from pathlib import Path
-
-from r2x_core import UpgradeType
-from r2x_sienna import SiennaUpgrader
-
-upgrader = SiennaUpgrader(Path("input/system.json"))
-result = upgrader.upgrade(upgrade_type=UpgradeType.SYSTEM)
-
-if result.is_err():
-    raise RuntimeError(result.err())
+```python doctest
+>>> from pathlib import Path
+>>> from r2x_core import UpgradeType
+>>> from r2x_sienna import SiennaUpgrader
+>>> upgrader = SiennaUpgrader(Path("working/system.json"))
+>>> result = upgrader.upgrade(upgrade_type=UpgradeType.SYSTEM)
+>>> if result.is_err():
+...     raise RuntimeError(result.err())
+...
+>>> assert result.is_ok()
 ```
 
 `current_version`, `target_version`, `strategy`, and a custom step list can be

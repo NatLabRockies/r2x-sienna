@@ -9,23 +9,28 @@ refer to Python model modules and class names.
 
 ## Repeat component and relationship checks
 
-Save the following as `inspect_details.py` and run it from the tutorial directory:
+Copy the console input below without prompts into `inspect_details.py` and run it from the tutorial directory:
 
-```python
-from r2x_sienna.models import ACBus, PowerLoad
-
-buses = list(sys.get_components(ACBus))
-print("Bus names:", [bus.name for bus in buses])
-loads = list(sys.get_components(PowerLoad))
-if loads:
-    load = loads[0]
-    print("Name:", load.name)
-    print("Values:", load.model_dump(exclude={"internal"}))
-    series_list = sys.list_time_series(load)
-    print("Matching single series:", len(series_list))
-    for series in series_list:
-        print(series.name, series.initial_timestamp, series.resolution)
-        print(series.data[:3])
+```python doctest
+>>> from r2x_sienna.models import ACBus, PowerLoad
+>>> buses = list(sys.get_components(ACBus))
+>>> assert len(buses) == 10
+>>> print("Bus names:", [bus.name for bus in buses])
+Bus names: ['nodeC2', 'nodeA', 'nodeC', 'nodeD2', 'nodeE', 'nodeB', 'nodeE2', 'nodeA2', 'nodeD', 'nodeB2']
+>>> loads = list(sys.get_components(PowerLoad))
+>>> if loads:
+...     load = loads[0]
+...     print("Name:", load.name)
+...     print("Values:", load.model_dump(exclude={"internal"}))
+...     series_list = sys.list_time_series(load)
+...     print("Matching single series:", len(series_list))
+...     for series in series_list:
+...         print(series.name, series.initial_timestamp, series.resolution)
+...         print(series.data[:3])
+...
+Name: Load-nodeD2
+Values: {'uuid': 'f34b9be2-6df6-4c36-964a-74c1adc40d9c', 'name': 'Load-nodeD2', 'available': True, 'category': None, 'ext': {}, 'services': [], 'dynamic_injector': None, 'bus': {'uuid': '0d8f260e-7680-4a4a-af6b-52ef1e32b6e4', 'name': 'nodeD2', 'available': True, 'category': None, 'ext': {}, 'number': 9, 'bustype': <ACBusTypes.REF: 'REF'>, 'area': None, 'load_zone': None, 'voltage_limits': {'min': 0.9, 'max': 1.05}, 'base_voltage': Quantity(230.0, "kilovolt"), 'magnitude': 1.0, 'class_type': 'ACBus'}, 'active_power': Quantity(4.0, "megawatt"), 'reactive_power': 1.3147, 'max_active_power': Quantity(4.0, "megawatt"), 'max_reactive_power': Quantity(1.3147, "megawatt"), 'base_power': Quantity(100.0, "volt_ampere"), 'conformity': <LoadConformity.UNDEFINED: 'UNDEFINED'>, 'class_type': 'PowerLoad'}
+Matching single series: 0
 ```
 
 ```bash
@@ -42,13 +47,12 @@ for supported filters and serialization behavior.
 ## Load the same archive from Python
 
 Use the Python executable shown by `r2x python show`, or a separate environment
-with compatible `r2x-sienna` and Infrasys versions. Save this as `load_archive.py`:
+with compatible `r2x-sienna` and Infrasys versions. Copy the console input below without `>>>`/`...` prompts into `load_archive.py`:
 
-```python
-from infrasys import Component, System
-
-system = System.load("outputs/system.zip")
-print("Components:", len(list(system.get_components(Component))))
+```python doctest
+>>> from infrasys import Component, System
+>>> system = System.load("outputs/system.zip")
+>>> assert len(list(system.get_components(Component))) == 53
 ```
 
 Run it with that interpreter. For example, in an activated compatible environment:

@@ -68,16 +68,18 @@ For Windows PowerShell, omit `> /dev/null` if that shell does not provide it.
 
 To identify the format, save this as `check_native.py`:
 
-```python
-import json
-from pathlib import Path
-
-path = Path("inputs/test_system.json")
-data = json.loads(path.read_text())
-print("Top-level keys:", sorted(data))
-print("Data version:", data.get("data_format_version"))
-native = data.get("data")
-print("Has native components:", isinstance(native, dict) and isinstance(native.get("components"), list))
+```python doctest
+>>> import json
+>>> from pathlib import Path
+>>> path = Path("inputs/test_system.json")
+>>> data = json.loads(path.read_text())
+>>> print("Top-level keys:", sorted(data))
+Top-level keys: ['data', 'data_format_version', 'frequency', 'internal', 'metadata', 'runchecks', 'units_settings']
+>>> print("Data version:", data.get("data_format_version"))
+Data version: 5.0.0
+>>> native = data.get("data")
+>>> print("Has native components:", isinstance(native, dict) and isinstance(native.get("components"), list))
+Has native components: True
 ```
 
 ```bash
@@ -100,19 +102,22 @@ The current parser may log these messages and still return a System. A successfu
 parse is therefore not a complete time-series verification. Diagnose the filename
 recorded in the native JSON with this read-only check:
 
-```python
-import json
-from pathlib import Path
-
-path = Path("inputs/test_system.json").resolve()
-data = json.loads(path.read_text())["data"]
-name = data.get("time_series_storage_file")
-print("Recorded storage:", name)
-if name:
-    recorded = Path(name)
-    resolved = recorded if recorded.is_absolute() else path.parent / recorded.name
-    print("Resolved storage:", resolved)
-    print("Exists:", resolved.is_file())
+```python doctest
+>>> import json
+>>> from pathlib import Path
+>>> path = Path("inputs/test_system.json").resolve()
+>>> data = json.loads(path.read_text())["data"]
+>>> name = data.get("time_series_storage_file")
+>>> print("Recorded storage:", name)
+Recorded storage: test_system_time_series_storage.h5
+>>> if name:
+...     recorded = Path(name)
+...     resolved = recorded if recorded.is_absolute() else path.parent / recorded.name
+...     print("Resolved storage:", resolved.name)
+...     print("Exists:", resolved.is_file())
+...
+Resolved storage: test_system_time_series_storage.h5
+Exists: True
 ```
 
 For the fixture, expect `test_system_time_series_storage.h5` and `Exists: True`.
@@ -129,11 +134,12 @@ restoring the original companion made the same pair readable again.
 
 **If the file exists but HDF5 cannot open it**, check file access independently:
 
-```python
-import h5py
-
-with h5py.File(resolved, "r") as storage:
-    print("HDF5 groups:", list(storage))
+```python doctest
+>>> import h5py
+>>> with h5py.File(resolved, "r") as storage:
+...     print("HDF5 groups:", list(storage))
+...
+HDF5 groups: ['time_series', 'time_series_metadata']
 ```
 
 Run this after the resolution block above. An HDF5 open error narrows the problem
@@ -160,21 +166,20 @@ in MW were reproduced through the public model constructor.
 
 Check the installed schema rather than guessing defaults:
 
-```python
-from r2x_sienna.models import ACBus
-
-print(ACBus.model_fields["number"])
-print(ACBus.model_fields["base_voltage"])
+```python doctest
+>>> from r2x_sienna.models import ACBus
+>>> assert "number" in ACBus.model_fields
+>>> assert "base_voltage" in ACBus.model_fields
 ```
 
 To validate a proposed corrected bus in application code:
 
-```python
-from r2x_sienna.models import ACBus
-from r2x_sienna.units import ureg
-
-bus = ACBus(name="CheckedBus", number=1, base_voltage=230 * ureg.kV)
-print(bus.number, bus.base_voltage)
+```python doctest
+>>> from r2x_sienna.models import ACBus
+>>> from r2x_sienna.units import ureg
+>>> bus = ACBus(name="CheckedBus", number=1, base_voltage=230 * ureg.kV)
+>>> assert bus.number == 1
+>>> assert bus.base_voltage.to("kilovolt").magnitude == 230
 ```
 
 Expect `1` and a voltage quantity in kV. This tests the field contract; it is not a
@@ -201,11 +206,11 @@ may also return `None` for malformed JSON or a directory with no JSON files.
 That result alone does not distinguish those cases. After the syntax/schema
 check above, inspect the actual detector result:
 
-```python
-from pathlib import Path
-from r2x_sienna import SiennaVersionDetector
-
-print(SiennaVersionDetector().read_version(Path("inputs/test_system.json")))
+```python doctest
+>>> from pathlib import Path
+>>> from r2x_sienna import SiennaVersionDetector
+>>> print(SiennaVersionDetector().read_version(Path("inputs/test_system.json")))
+5.0.0
 ```
 
 For the pinned fixture this prints `5.0.0`. The detector checks top-level
@@ -259,16 +264,15 @@ recovery or Julia solve was performed for this documentation.
 the exporter's parent-directory hook cannot run before a failing store constructor.
 Use the public setup pattern:
 
-```python
-from pathlib import Path
-from r2x_core import DataStore
-from r2x_sienna import SiennaExporterConfig
-
-output = Path("outputs/recovered.json")
-output.parent.mkdir(parents=True, exist_ok=True)
-config = SiennaExporterConfig(output_path=str(output))
-store = DataStore(path=output.parent)
-print(store.folder)
+```python doctest
+>>> from pathlib import Path
+>>> from r2x_core import DataStore
+>>> from r2x_sienna import SiennaExporterConfig
+>>> output = Path("outputs/recovered.json")
+>>> _ = output.parent.mkdir(parents=True, exist_ok=True)
+>>> config = SiennaExporterConfig(output_path=str(output))
+>>> store = DataStore(path=output.parent)
+>>> assert Path(store.folder).is_dir()
 ```
 
 **Verify:** run the complete [Python exporter example](/r2x-sienna/how-to/python/), then

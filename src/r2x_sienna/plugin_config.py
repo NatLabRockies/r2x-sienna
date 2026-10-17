@@ -35,12 +35,15 @@ class SiennaConfig(PluginConfig):
     --------
     Single year with custom base power:
 
+    >>> from r2x_sienna import SiennaConfig
     >>> config = SiennaConfig(
     ...     model_year=2030,
     ...     system_name="EI_Sys",
     ...     system_base_power=100.0,
-    ...     skip_validation=True,
+    ...     skip_validation=False,
     ... )
+
+    >>> assert config.model_year == 2030
 
     Multiple years:
 
@@ -49,6 +52,8 @@ class SiennaConfig(PluginConfig):
     ...     system_name="Case5_PJM",
     ...     skip_validation=False,
     ... )
+
+    >>> assert config.model_year == [2030, 2040, 2050]
 
     See Also
     --------
@@ -126,10 +131,12 @@ class SiennaExporterConfig(PluginConfig):
 
     Examples
     --------
+    >>> from r2x_sienna import SiennaExporterConfig
     >>> config = SiennaExporterConfig(
-    ...     output_path="/tmp/output/system.json",
+    ...     output_path="output/system.json",
     ...     system_base_power=100.0,
     ... )
+    >>> assert config.output_path == "output/system.json"
     """
 
     output_path: Annotated[str, Field(description="Path for output JSON file")]
