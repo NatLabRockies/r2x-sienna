@@ -21,7 +21,11 @@ Bus names: ['nodeC2', 'nodeA', 'nodeC', 'nodeD2', 'nodeE', 'nodeB', 'nodeE2', 'n
 >>> if loads:
 ...     load = loads[0]
 ...     print("Name:", load.name)
-...     print("Values:", load.model_dump(exclude={"internal"}))
+...     values = load.model_dump(exclude={"internal"})
+...     assert values["name"] == "Load-nodeD2"
+...     assert values["bus"]["number"] == 9
+...     assert load.active_power.to("megawatt").magnitude == 4.0
+...     print("Active power (MW):", float(load.active_power.to("megawatt").magnitude))
 ...     series_list = sys.list_time_series(load)
 ...     print("Matching single series:", len(series_list))
 ...     for series in series_list:
@@ -29,7 +33,7 @@ Bus names: ['nodeC2', 'nodeA', 'nodeC', 'nodeD2', 'nodeE', 'nodeB', 'nodeE2', 'n
 ...         print(series.data[:3])
 ...
 Name: Load-nodeD2
-Values: {'uuid': 'f34b9be2-6df6-4c36-964a-74c1adc40d9c', 'name': 'Load-nodeD2', 'available': True, 'category': None, 'ext': {}, 'services': [], 'dynamic_injector': None, 'bus': {'uuid': '0d8f260e-7680-4a4a-af6b-52ef1e32b6e4', 'name': 'nodeD2', 'available': True, 'category': None, 'ext': {}, 'number': 9, 'bustype': <ACBusTypes.REF: 'REF'>, 'area': None, 'load_zone': None, 'voltage_limits': {'min': 0.9, 'max': 1.05}, 'base_voltage': Quantity(230.0, "kilovolt"), 'magnitude': 1.0, 'class_type': 'ACBus'}, 'active_power': Quantity(4.0, "megawatt"), 'reactive_power': 1.3147, 'max_active_power': Quantity(4.0, "megawatt"), 'max_reactive_power': Quantity(1.3147, "megawatt"), 'base_power': Quantity(100.0, "volt_ampere"), 'conformity': <LoadConformity.UNDEFINED: 'UNDEFINED'>, 'class_type': 'PowerLoad'}
+Active power (MW): 4.0
 Matching single series: 0
 ```
 
