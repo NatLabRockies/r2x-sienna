@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/NatLabRockies/r2x-sienna/compare/v0.5.0...v0.5.1) (2026-10-21)
+
+
+### Documentation
+
+* align Sienna guides with R2X documentation ([#42](https://github.com/NatLabRockies/r2x-sienna/issues/42)) ([0c643fd](https://github.com/NatLabRockies/r2x-sienna/commit/0c643fdbdc5709a7954ad916f244e77b90ecaff5))
+
 ## [0.5.0](https://github.com/NatLabRockies/r2x-sienna/compare/v0.4.2...v0.5.0) (2026-09-15)
 
 
