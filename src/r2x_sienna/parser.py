@@ -582,7 +582,7 @@ class SiennaParser(Plugin[SiennaConfig]):
     ) -> Any:
         component_type = cached_types.get_type(metadata)
         if cached_types.allowed_to_deserialize(component_type):
-            resolved = self.system._components.get_by_uuid(metadata.uuid)
+            resolved = self.system.get_component_by_uuid(metadata.uuid)
             logger.trace("Resolved composed ref: {} uuid={}", component_type.__name__, metadata.uuid)
             return resolved
         logger.trace(
@@ -601,7 +601,7 @@ class SiennaParser(Plugin[SiennaConfig]):
             assert isinstance(metadata, SerializedComponentReference)
             component_type = cached_types.get_type(metadata)
             if cached_types.allowed_to_deserialize(component_type):
-                deserialized_components.append(self.system._components.get_by_uuid(metadata.uuid))
+                deserialized_components.append(self.system.get_component_by_uuid(metadata.uuid))
             else:
                 logger.trace(
                     "Composed list deferred: {} uuid={} not yet available",

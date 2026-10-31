@@ -4,6 +4,7 @@ These tests verify basic parser instantiation and configuration using
 a minimal test data set.
 """
 
+import json
 import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -16,7 +17,7 @@ from infrasys import Deterministic, SingleTimeSeries
 from infrasys.exceptions import ISNotStored
 from r2x_core import DataStore, PluginContext, System
 
-from r2x_sienna.models import HydroReservoir, Source
+from r2x_sienna.models import HydroReservoir, Source, VariableReserve
 from r2x_sienna.parser import SiennaParser
 from r2x_sienna.plugin_config import SiennaConfig
 
@@ -325,6 +326,47 @@ def test_parser_builds_2area_5bus_with_source(data_folder: Path, tmp_path: Path)
     source_bus1 = next(source for source in sources if source.name == "source_bus1")
     assert source_bus1.operation_cost is not None
     assert source_bus1.operation_cost.ancillary_service_offers == []
+
+
+def test_parser_preserves_uuid_references_in_component_lists(data_folder: Path, tmp_path: Path):
+    """Resolve a Sienna service UUID and preserve the reference through serialization."""
+    case_path = tmp_path / "case"
+    shutil.copytree(data_folder / "2area-5bus-system", case_path)
+    json_path = case_path / "test_system.json"
+    payload = json.loads(json_path.read_text())
+    components = payload["data"]["components"]
+    source = next(item for item in components if item.get("name") == "source_bus1")
+    reserve_uuid = uuid4()
+    source["services"] = [{"value": str(reserve_uuid)}]
+    components.append(
+        {
+            "__metadata__": {
+                "module": "PowerSystems",
+                "type": "VariableReserve",
+                "parameters": ["ReserveUp"],
+            },
+            "name": "test_reserve",
+            "requirement": 0.0,
+            "internal": {"uuid": {"value": str(reserve_uuid)}},
+        }
+    )
+    json_path.write_text(json.dumps(payload))
+    config = SiennaConfig(
+        model_year=2029, system_name="case", system_base_power=100.0, json_path=str(json_path)
+    )
+    system = SiennaParser.from_context(PluginContext(config=config)).run().system
+    assert system is not None
+    source_component = system.get_component(Source, "source_bus1")
+    reserve = system.get_component(VariableReserve, "test_reserve")
+    assert source_component.services == [reserve]
+    assert reserve.uuid == reserve_uuid
+
+    output = tmp_path / "system.json"
+    system.to_json(output, overwrite=True)
+    restored = System.from_json(output)
+    restored_reserve = restored.get_component(VariableReserve, "test_reserve")
+    assert restored_reserve.uuid == reserve_uuid
+    assert restored.get_component(Source, "source_bus1").services == [restored_reserve]
 
 
 class TestDeserializeComponentsNested:
