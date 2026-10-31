@@ -30,14 +30,26 @@ from infrasys.supplemental_attribute_manager import SupplementalAttributeManager
 from infrasys.time_series_manager import TimeSeriesManager
 from infrasys.time_series_metadata_store import TimeSeriesMetadataStore
 from loguru import logger
-from pydantic import ValidationError
-from r2x_core import Plugin, System
+from pydantic import TypeAdapter, ValidationError
+from r2x_core import (
+    ComponentInstruction,
+    DataReader,
+    DataStore,
+    DocumentSource,
+    Plugin,
+    System,
+    build_system_from_sources,
+)
+from r2x_core.types import JSONValue
 from r2x_core.units import UnitSpec
-from rust_ok import Err, Ok, Result
+from r2x_core.utils import get_fpath
+from rust_ok import Err, Ok, Result, is_ok
 
+from r2x_sienna import models as sienna_models
 from r2x_sienna.models.enums import ReserveDirection, ReserveType
 from r2x_sienna.models.generators import HydroDispatch, HydroReservoir
 from r2x_sienna.models.services import VariableReserve
+from r2x_sienna.models.topology import ACBus, Area, DCBus, LoadZone
 
 from .plugin_config import SiennaConfig
 from .upgrader.data_upgrader import run_sienna_upgrades
@@ -76,6 +88,7 @@ class SiennaParser(Plugin[SiennaConfig]):
         # Store stdin_payload if provided (for r2x-core pipeline support)
         stdin_payload: IO[str] | IO[bytes] | str | bytes | None = getattr(self, "_stdin_payload", None)
         self._use_stdin = stdin_payload is not None
+        self._configured_component_types: set[type[Component]] = set()
 
         config = self._require_config()
         logger.info(
@@ -84,6 +97,19 @@ class SiennaParser(Plugin[SiennaConfig]):
             self.skip_validation,
             "stdin" if self._use_stdin else config.json_path or "<none>",
         )
+
+        if not self._use_stdin and config.json_path:
+            try:
+                if self.ctx.store is None:
+                    self.ctx.store = DataStore(Path(config.json_path).resolve().parent)
+                if "sienna_system" not in self.ctx.store:
+                    mapping = config.fmap_path
+                    if mapping.exists():
+                        self.ctx.store.load_file_mapping(mapping)
+                    if "sienna_system" not in self.ctx.store:
+                        self.ctx.store.load_file_mapping(config.package_config_path() / "file_mapping.json")
+            except (OSError, ValueError) as exc:
+                return Err(str(exc))
 
         return Ok(None)
 
@@ -128,6 +154,7 @@ class SiennaParser(Plugin[SiennaConfig]):
             self._ensure_hydro_dispatch_budget_time_series()
 
             elapsed = time.perf_counter() - t0
+            system = self.system
             component_count = sum(1 for _ in system.iter_all_components())
             logger.info(
                 "Sienna system '{}' built in {:.2f}s ({} components)",
@@ -177,15 +204,30 @@ class SiennaParser(Plugin[SiennaConfig]):
             if not config.json_path:
                 raise ValueError("json_path must be specified in SiennaConfig when not reading from stdin")
 
-            sys_path = Path(config.json_path)
-            file_size_mb = sys_path.stat().st_size / (1024 * 1024)
-            logger.debug("Loading JSON from {} ({:.1f} MB)", sys_path, file_size_mb)
-            t0 = time.perf_counter()
-            with open(sys_path) as f:
-                system_data = json.load(f)
-            logger.debug("JSON parsed in {:.2f}s", time.perf_counter() - t0)
+            mapping = DataReader.resolve_placeholders(
+                self.store["sienna_system"],
+                placeholders={"sienna_json_path": str(Path(config.json_path).resolve())},
+            )
+            path_result = get_fpath(mapping, folder_path=self.store.folder)
+            if not is_ok(path_result):
+                raise path_result.err()
+            if path_result.value.resolve() != Path(config.json_path).resolve():
+                raise ValueError("sienna_system mapping must resolve to config.json_path used by upgrades")
+            sources = DataReader().read_data_files(
+                [mapping],
+                folder_path=self.store.folder,
+                placeholders={"sienna_json_path": str(Path(config.json_path).resolve())},
+            )
+            source = sources["sienna_system"]
+            if not isinstance(source, DocumentSource):
+                raise TypeError("Sienna system mapping must decode to a JSON document")
+            system_data = source.json_data()
+            if not isinstance(system_data, dict):
+                raise ValueError("Sienna system JSON must be an object")
             json_data = system_data.pop("data")
 
+        if not isinstance(json_data, dict):
+            raise TypeError("Sienna system data must be an object")
         component_data = json_data.pop("components")
         self.data_information = json_data
         logger.info("Loaded {} raw components from source data", len(component_data))
@@ -210,6 +252,8 @@ class SiennaParser(Plugin[SiennaConfig]):
 
         logger.debug("Deserializing components into system")
         t0 = time.perf_counter()
+        if not self.skip_validation:
+            components_solved = self._build_configured_components(components_solved)
         self._deserialize_components(components_solved)
         logger.debug("Component deserialization complete in {:.2f}s", time.perf_counter() - t0)
 
@@ -346,9 +390,127 @@ class SiennaParser(Plugin[SiennaConfig]):
 
         return obj
 
+    def _build_configured_components(self, components: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Build simple topology components with Core's configured parser rules."""
+        rules_path = self.config.parser_rules_path
+        if not rules_path.exists():
+            rules_path = self.config.package_config_path() / "parser_rules.json"
+        rules = TypeAdapter(list[ComponentInstruction]).validate_json(rules_path.read_bytes())
+        grouped: dict[str, list[dict[str, Any]]] = {rule.source: [] for rule in rules}
+        topology = {"Area": ("areas", Area), "LoadZone": ("load_zones", LoadZone)}
+        names = {
+            str(component["uuid"]): component["name"]
+            for component in components
+            if component.get("__metadata__", {}).get("type") in topology
+            and "uuid" in component
+            and "name" in component
+        }
+        bus_names = {
+            str(component["uuid"]): component["name"]
+            for component in components
+            if component.get("__metadata__", {}).get("type") == "ACBus"
+            and "uuid" in component
+            and "name" in component
+        }
+        bus_model_names = {
+            "PowerLoad": "power_loads",
+            "FixedAdmittance": "fixedadmittance_rows",
+            "RenewableDispatch": "renewabledispatch_rows",
+            "RenewableNonDispatch": "renewablenondispatch_rows",
+            "ThermalStandard": "thermalstandard_rows",
+            "Source": "source_rows",
+            "HydroDispatch": "hydrodispatch_rows",
+            "HydroTurbine": "hydroturbine_rows",
+            "SynchronousCondenser": "synchronouscondenser_rows",
+            "EnergyReservoirStorage": "energyreservoirstorage_rows",
+        }
+        eligible_models: dict[str, tuple[str, type[Component]]] = {}
+        for type_name, source_name in bus_model_names.items():
+            items = [item for item in components if item.get(TYPE_METADATA, {}).get("type") == type_name]
+            if items and all(
+                isinstance(item.get("bus"), dict)
+                and str(item["bus"].get(TYPE_METADATA, {}).get("uuid")) in bus_names
+                and all(
+                    not (isinstance(value, dict) and TYPE_METADATA in value)
+                    and not (
+                        isinstance(value, list)
+                        and any(isinstance(x, dict) and TYPE_METADATA in x for x in value)
+                    )
+                    for key, value in item.items()
+                    if key not in {"bus", TYPE_METADATA}
+                )
+                for item in items
+            ):
+                eligible_models[type_name] = (source_name, getattr(sienna_models, type_name))
+        remaining = []
+        for component in components:
+            component_type = component.get("__metadata__", {}).get("type")
+            if component_type in topology:
+                source_name, model_type = topology[component_type]
+            elif component_type in {"ACBus", "DCBus"}:
+                model_type = ACBus if component_type == "ACBus" else DCBus
+                area = component.get("area")
+                zone = component.get("load_zone")
+                source_name = "ac_buses" if component_type == "ACBus" else "dc_buses"
+                source_name += ("_area" if area else "") + ("_zone" if zone else "")
+            elif component_type in eligible_models:
+                source_name, model_type = eligible_models[component_type]
+            else:
+                remaining.append(component)
+                continue
+            row = {
+                key: str(value) if isinstance(value, UUID) else value
+                for key, value in component.items()
+                if key in model_type.model_fields
+                and value is not None
+                and key not in {"area", "load_zone", "bus"}
+            }
+            if component_type in {"ACBus", "DCBus"}:
+                for field in ("area", "load_zone"):
+                    reference = component.get(field)
+                    if reference:
+                        uuid = str(reference["__metadata__"]["uuid"])
+                        if uuid not in names:
+                            raise ValueError(
+                                f"Unknown {field} UUID {uuid!r} for {component_type} {component.get('name')!r}"
+                            )
+                        row[f"{field}_name"] = names[uuid]
+            if component_type in eligible_models:
+                uuid = str(component["bus"][TYPE_METADATA]["uuid"])
+                row["bus_name"] = bus_names[uuid]
+                for field, value in list(row.items()):
+                    if field not in model_type.model_fields:
+                        continue
+                    specs = model_type.model_fields[field].metadata
+                    if (
+                        isinstance(value, dict)
+                        and not {"value", "unit"} <= value.keys()
+                        and any(isinstance(spec, UnitSpec) and spec.base is not None for spec in specs)
+                    ):
+                        row[field] = {"value": value, "unit": "pu"}
+            grouped[source_name].append(row)
+        active_rules = [rule for rule in rules if grouped[rule.source]]
+        sources = {
+            name: DocumentSource(TypeAdapter(JSONValue).validate_python(rows), None)
+            for name, rows in grouped.items()
+            if rows
+        }
+        self.ctx.system = build_system_from_sources(
+            sources,
+            config=self.config,
+            instructions=active_rules,
+            name=self.config.system_name or "Sienna",
+            system_options={"system_base": self.config.system_base_power or None},
+        )
+        self._configured_component_types = {
+            type(component) for component in self.system.iter_all_components()
+        }
+        return remaining
+
     def _deserialize_components(self, components: list[dict[str, Any]]) -> None:
         """Deserialize components from dictionaries and add them to the system."""
         cached_types = CachedTypeHelper()
+        cached_types.add_deserialized_types(getattr(self, "_configured_component_types", set()))
         logger.debug("Deserializing {} component dicts (first pass: simple types)", len(components))
         skipped_types = self._deserialize_components_first_pass(components, cached_types)
         if skipped_types:

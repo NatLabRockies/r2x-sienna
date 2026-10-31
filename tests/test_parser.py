@@ -9,7 +9,7 @@ import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import numpy as np
 import pytest
@@ -17,8 +17,8 @@ from infrasys import Deterministic, SingleTimeSeries
 from infrasys.exceptions import ISNotStored
 from r2x_core import DataStore, PluginContext, System
 
-from r2x_sienna.models import HydroReservoir, Source, VariableReserve
-from r2x_sienna.parser import SiennaParser
+from r2x_sienna.models import ACBus, HydroReservoir, PowerLoad, Source, VariableReserve
+from r2x_sienna.parser import SiennaParser, create_temporary_h5_storage
 from r2x_sienna.plugin_config import SiennaConfig
 
 
@@ -316,6 +316,9 @@ def test_parser_builds_2area_5bus_with_source(data_folder: Path, tmp_path: Path)
     parser = SiennaParser.from_context(ctx)
     result_ctx = parser.run()
     system = result_ctx.system
+    assert result_ctx.store is not None
+    assert result_ctx.store["sienna_system"].reader.format == "json"
+    assert str(result_ctx.store["sienna_system"].fpath) == "{sienna_json_path}"
 
     sources = [component for component in system._component_mgr.iter_all() if isinstance(component, Source)]
     assert sources, "Expected at least one Source component in parsed system"
@@ -328,7 +331,53 @@ def test_parser_builds_2area_5bus_with_source(data_folder: Path, tmp_path: Path)
     assert source_bus1.operation_cost.ancillary_service_offers == []
 
 
-def test_parser_preserves_uuid_references_in_component_lists(data_folder: Path, tmp_path: Path):
+def test_parser_rules_preserve_rts_bus_references_and_uuids(data_folder: Path, tmp_path: Path):
+    """Core-built buses retain the original UUID and canonical area and zone references."""
+    case_path = tmp_path / "rts"
+    shutil.copytree(data_folder / "case_rts_gmlc", case_path)
+    json_path = case_path / "rts_gmlc_da_sys.json"
+    components = json.loads(json_path.read_text())["data"]["components"]
+    raw_bus = next(item for item in components if item.get("__metadata__", {}).get("type") == "ACBus")
+    config = SiennaConfig(
+        model_year=2010, system_name="rts", system_base_power=100.0, json_path=str(json_path)
+    )
+    parser = SiennaParser.from_context(PluginContext(config=config))
+    system = parser.run().system
+    assert system is not None
+    assert {ACBus, PowerLoad} <= parser._configured_component_types
+    raw_load = next(item for item in components if item.get("__metadata__", {}).get("type") == "PowerLoad")
+    load = system.get_component(PowerLoad, raw_load["name"])
+    assert load.uuid == UUID(raw_load["internal"]["uuid"]["value"])
+    assert load.bus is system.get_component_by_uuid(UUID(raw_load["bus"]["value"]))
+    bus = system.get_component(ACBus, raw_bus["name"])
+    assert bus.uuid == UUID(raw_bus["internal"]["uuid"]["value"])
+    assert bus.area is system.get_component_by_uuid(UUID(raw_bus["area"]["value"]))
+    assert bus.load_zone is system.get_component_by_uuid(UUID(raw_bus["load_zone"]["value"]))
+
+    output = tmp_path / "rts.json"
+    system.to_json(output, overwrite=True)
+    restored = System.from_json(output)
+    restored_bus = restored.get_component(ACBus, raw_bus["name"])
+    assert restored_bus.uuid == bus.uuid
+    assert restored_bus.area is restored.get_component_by_uuid(bus.area.uuid)
+    assert restored_bus.load_zone is restored.get_component_by_uuid(bus.load_zone.uuid)
+
+    source_storage = create_temporary_h5_storage(case_path / "rts_gmlc_da_sys_time_series_storage.h5")
+    source_connection = source_storage.get_metadata_store()
+    query = (
+        "SELECT owner_uuid, time_series_uuid, name, time_series_type "
+        "FROM time_series_associations WHERE owner_type = 'Area' ORDER BY 1, 2, 3, 4"
+    )
+    source_associations = source_connection.execute(query).fetchall()
+    assert source_associations
+    assert system._time_series_mgr._metadata_store._con.execute(query).fetchall() == source_associations
+    assert restored._time_series_mgr._metadata_store._con.execute(query).fetchall() == source_associations
+
+
+@pytest.mark.parametrize("skip_validation", [False, True])
+def test_parser_preserves_uuid_references_in_component_lists(
+    data_folder: Path, tmp_path: Path, skip_validation: bool
+):
     """Resolve a Sienna service UUID and preserve the reference through serialization."""
     case_path = tmp_path / "case"
     shutil.copytree(data_folder / "2area-5bus-system", case_path)
@@ -359,6 +408,7 @@ def test_parser_preserves_uuid_references_in_component_lists(data_folder: Path, 
     source_component = system.get_component(Source, "source_bus1")
     reserve = system.get_component(VariableReserve, "test_reserve")
     assert source_component.services == [reserve]
+    assert source_component.services[0] is reserve
     assert reserve.uuid == reserve_uuid
 
     output = tmp_path / "system.json"
@@ -366,7 +416,9 @@ def test_parser_preserves_uuid_references_in_component_lists(data_folder: Path, 
     restored = System.from_json(output)
     restored_reserve = restored.get_component(VariableReserve, "test_reserve")
     assert restored_reserve.uuid == reserve_uuid
-    assert restored.get_component(Source, "source_bus1").services == [restored_reserve]
+    restored_source = restored.get_component(Source, "source_bus1")
+    assert restored_source.services == [restored_reserve]
+    assert restored_source.services[0] is restored_reserve
 
 
 class TestDeserializeComponentsNested:
@@ -502,5 +554,115 @@ class TestDeserializeComponentsNested:
 
             # With the fix, this should raise ValueError with a clear message
             # instead of the cryptic AssertionError
-            with pytest.raises(ValueError, match="Failed to deserialize.*Bus2_Invalid"):
+            with pytest.raises(ValueError, match="greater than 0"):
                 parser._parse_components()
+
+
+def test_parser_rules_optional_references_with_partial_config_override(tmp_path: Path):
+    """Older overrides may omit new assets; all bus reference combinations remain valid."""
+    area_id, zone_id = uuid4(), uuid4()
+    rows = [
+        {"__metadata__": {"type": "Area"}, "name": "area", "internal": {"uuid": {"value": str(area_id)}}},
+        {"__metadata__": {"type": "LoadZone"}, "name": "zone", "internal": {"uuid": {"value": str(zone_id)}}},
+    ]
+    for index, (area, zone) in enumerate(((False, False), (True, False), (False, True), (True, True)), 1):
+        rows.append(
+            {
+                "__metadata__": {"type": "DCBus" if index == 4 else "ACBus"},
+                "name": f"bus-{index}",
+                "number": index,
+                "internal": {"uuid": {"value": str(uuid4())}},
+                "area": {"value": str(area_id)} if area else None,
+                "load_zone": {"value": str(zone_id)} if zone else None,
+            }
+        )
+    path = tmp_path / "system.json"
+    path.write_text(json.dumps({"data": {"components": rows}}))
+    config_dir = tmp_path / "legacy-config"
+    config_dir.mkdir()
+    (config_dir / "file_mapping.json").write_text("[]")
+    config = SiennaConfig(json_path=str(path), config_path_override=config_dir)
+    parser = SiennaParser.from_context(PluginContext(config=config))
+    assert parser.on_prepare().is_ok()
+    parser.ctx.system = System(name="test")
+    parser._parse_components()
+    from r2x_sienna.models import Area, DCBus, LoadZone
+
+    area = parser.system.get_component(Area, "area")
+    zone = parser.system.get_component(LoadZone, "zone")
+    assert parser.system.get_component(ACBus, "bus-1").area is None
+    assert parser.system.get_component(ACBus, "bus-2").area is area
+    assert parser.system.get_component(ACBus, "bus-3").load_zone is zone
+    bus = parser.system.get_component(DCBus, "bus-4")
+    assert bus.area is area and bus.load_zone is zone
+
+
+def test_parser_rejects_injected_mapping_that_disagrees_with_upgrade_path(tmp_path: Path):
+    """An injected store cannot silently make upgrades and parsing read different files."""
+    from r2x_core import DataFile
+
+    source, other = tmp_path / "source.json", tmp_path / "other.json"
+    source.write_text("{}")
+    other.write_text("{}")
+    store = DataStore(tmp_path)
+    store.add_data([DataFile(name="sienna_system", fpath=other)])
+    parser = SiennaParser.from_context(PluginContext(config=SiennaConfig(json_path=str(source)), store=store))
+    assert parser.on_prepare().is_ok()
+    with pytest.raises(ValueError, match="mapping must resolve to config.json_path"):
+        parser._parse_components()
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_parser_rejects_missing_reference_or_duplicate_name(tmp_path: Path, duplicate: bool):
+    """Invalid UUID references and ambiguous same-type names fail explicitly."""
+    area_id = uuid4()
+    area = {"__metadata__": {"type": "Area"}, "name": "area", "internal": {"uuid": {"value": str(area_id)}}}
+    rows = [area]
+    if duplicate:
+        rows.append({**area, "internal": {"uuid": {"value": str(uuid4())}}})
+    else:
+        rows.append(
+            {
+                "__metadata__": {"type": "ACBus"},
+                "name": "bus",
+                "number": 1,
+                "internal": {"uuid": {"value": str(uuid4())}},
+                "area": {"value": str(uuid4())},
+            }
+        )
+    path = tmp_path / "system.json"
+    path.write_text(json.dumps({"data": {"components": rows}}))
+    parser = SiennaParser.from_context(PluginContext(config=SiennaConfig(json_path=str(path))))
+    assert parser.on_prepare().is_ok()
+    parser.ctx.system = System(name="test")
+    with pytest.raises(ValueError, match="Duplicate|Unknown area UUID"):
+        parser._parse_components()
+
+
+@pytest.mark.parametrize(
+    "case_name,json_name",
+    [("case_rts_gmlc", "rts_gmlc_da_sys.json"), ("2area-5bus-system", "test_system.json")],
+)
+def test_parser_rule_components_match_native_rts_deserialization(
+    data_folder: Path, tmp_path: Path, monkeypatch, case_name: str, json_name: str
+):
+    """Mapped RTS component fields match native deserialization, including nested values."""
+    source = data_folder / case_name
+    mapped_path, native_path = tmp_path / "mapped", tmp_path / "native"
+    shutil.copytree(source, mapped_path)
+    shutil.copytree(source, native_path)
+
+    def parse(folder: Path):
+        config = SiennaConfig(model_year=2010, system_name="rts", json_path=str(folder / json_name))
+        parser = SiennaParser.from_context(PluginContext(config=config))
+        return parser, parser.run().system
+
+    parser, mapped = parse(mapped_path)
+    monkeypatch.setattr(SiennaParser, "_build_configured_components", lambda self, components: components)
+    _, native = parse(native_path)
+    assert mapped is not None and native is not None
+    assert ACBus in parser._configured_component_types
+    for component_type in parser._configured_component_types:
+        for component in mapped.get_components(component_type):
+            original = native.get_component_by_uuid(component.uuid)
+            assert component.model_dump(mode="json") == original.model_dump(mode="json")

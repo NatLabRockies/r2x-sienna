@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "name": "sienna_system",
+    "fpath": "{sienna_json_path}",
+    "reader": {"format": "json"},
+    "info": {"description": "Sienna PowerSystems JSON system"}
+  }
+]

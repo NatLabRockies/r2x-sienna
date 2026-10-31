@@ -1,0 +1,206 @@
+[
+  {
+    "kind": "component",
+    "source": "areas",
+    "component_type": "Area"
+  },
+  {
+    "kind": "component",
+    "source": "load_zones",
+    "component_type": "LoadZone"
+  },
+  {
+    "kind": "component",
+    "source": "ac_buses",
+    "component_type": "ACBus"
+  },
+  {
+    "kind": "component",
+    "source": "ac_buses_area",
+    "component_type": "ACBus",
+    "references": {
+      "area": {
+        "component_type": "Area",
+        "name_field": "area_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "ac_buses_zone",
+    "component_type": "ACBus",
+    "references": {
+      "load_zone": {
+        "component_type": "LoadZone",
+        "name_field": "load_zone_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "ac_buses_area_zone",
+    "component_type": "ACBus",
+    "references": {
+      "area": {
+        "component_type": "Area",
+        "name_field": "area_name"
+      },
+      "load_zone": {
+        "component_type": "LoadZone",
+        "name_field": "load_zone_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "dc_buses",
+    "component_type": "DCBus"
+  },
+  {
+    "kind": "component",
+    "source": "dc_buses_area",
+    "component_type": "DCBus",
+    "references": {
+      "area": {
+        "component_type": "Area",
+        "name_field": "area_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "dc_buses_zone",
+    "component_type": "DCBus",
+    "references": {
+      "load_zone": {
+        "component_type": "LoadZone",
+        "name_field": "load_zone_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "dc_buses_area_zone",
+    "component_type": "DCBus",
+    "references": {
+      "area": {
+        "component_type": "Area",
+        "name_field": "area_name"
+      },
+      "load_zone": {
+        "component_type": "LoadZone",
+        "name_field": "load_zone_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "power_loads",
+    "component_type": "PowerLoad",
+    "references": {
+      "bus": {
+        "component_type": "ACBus",
+        "name_field": "bus_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "fixedadmittance_rows",
+    "component_type": "FixedAdmittance",
+    "references": {
+      "bus": {
+        "component_type": "ACBus",
+        "name_field": "bus_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "renewabledispatch_rows",
+    "component_type": "RenewableDispatch",
+    "references": {
+      "bus": {
+        "component_type": "ACBus",
+        "name_field": "bus_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "renewablenondispatch_rows",
+    "component_type": "RenewableNonDispatch",
+    "references": {
+      "bus": {
+        "component_type": "ACBus",
+        "name_field": "bus_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "thermalstandard_rows",
+    "component_type": "ThermalStandard",
+    "references": {
+      "bus": {
+        "component_type": "ACBus",
+        "name_field": "bus_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "source_rows",
+    "component_type": "Source",
+    "references": {
+      "bus": {
+        "component_type": "ACBus",
+        "name_field": "bus_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "hydrodispatch_rows",
+    "component_type": "HydroDispatch",
+    "references": {
+      "bus": {
+        "component_type": "ACBus",
+        "name_field": "bus_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "hydroturbine_rows",
+    "component_type": "HydroTurbine",
+    "references": {
+      "bus": {
+        "component_type": "ACBus",
+        "name_field": "bus_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "synchronouscondenser_rows",
+    "component_type": "SynchronousCondenser",
+    "references": {
+      "bus": {
+        "component_type": "ACBus",
+        "name_field": "bus_name"
+      }
+    }
+  },
+  {
+    "kind": "component",
+    "source": "energyreservoirstorage_rows",
+    "component_type": "EnergyReservoirStorage",
+    "references": {
+      "bus": {
+        "component_type": "ACBus",
+        "name_field": "bus_name"
+      }
+    }
+  }
+]

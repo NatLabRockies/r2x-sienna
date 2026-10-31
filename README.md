@@ -30,6 +30,38 @@ r2x list r2x-sienna
 
 Confirm `sienna-parser` and `sienna-exporter` are discovered, then follow the [round-trip tutorial](https://natlabrockies.github.io/r2x-sienna/tutorials/round-trip/).
 
+## Parsing and Core mappings
+
+The parser reads the configured PSY JSON through Core's `DataStore` and
+`DataReader` using `config/file_mapping.json`. Core parser rules construct
+`Area`, `LoadZone`, `ACBus`, and `DCBus`, including optional area and load-zone
+references. They also construct `PowerLoad`, `FixedAdmittance`, `Source`,
+`ThermalStandard`, `RenewableDispatch`, `RenewableNonDispatch`, `HydroDispatch`,
+`HydroTurbine`, `SynchronousCondenser`, and `EnergyReservoirStorage` when every
+component of that type references an AC bus and has no additional top-level serialized
+component/quantity reference or component-reference list. Otherwise the whole
+type uses the native PSY deserializer. Other types, including `Arc`, `Line`,
+transformers, reserves, and reservoir-linked resources, also use that native
+path. Nested ordinary JSON values are still validated by the mapped models.
+
+Source component UUIDs are retained. Scalar references are resolved to the
+stored component; native list references and the existing HDF5 time-series
+association UUIDs and deterministic metadata remain in the PSY path. The
+parser continues to synthesize missing hydro series as before.
+
+With `skip_validation=true`, all components use native deserialization. Stdin
+JSON bypasses the physical file mapping; its existing upgrade lifecycle remains
+unchanged. A configuration override may provide its own file
+mapping and parser rules; if either asset is absent, the packaged default is
+used. An empty file mapping also falls back to the packaged system mapping. A
+preexisting `sienna_system` store entry must resolve to `json_path`, because
+the upgrade phase uses that path too.
+
+This migration targets Core commit `d090584fb69d642a0f745bef3491a70c3780d261`
+and ReEDS PR #133 commit `dd8d6e0505bf6cfb6f29705393a3f94ba6726b6a`. Core is
+pinned by Git URL until a release includes these APIs; replace it with a
+released version range before normal PyPI publication.
+
 ## Documentation
 
 - [Getting started](https://natlabrockies.github.io/r2x-sienna/getting-started/installation/): installation, environment setup, and first-use checks.
