@@ -140,10 +140,8 @@ class DiscreteControlledACBranch(ACBranch):
     @classmethod
     def example(cls) -> "DiscreteControlledACBranch":
         """Create an example DiscreteControlledACBranch instance."""
-        from_bus = ACBus.example()
-        from_bus.name = "Bus1"
-        to_bus = ACBus.example()
-        to_bus.name = "Bus2"
+        from_bus = ACBus.example().model_copy(update={"name": "Bus1"})
+        to_bus = ACBus.example().model_copy(update={"name": "Bus2"})
 
         return DiscreteControlledACBranch(
             name="ExampleDiscreteControlledACBranch",
