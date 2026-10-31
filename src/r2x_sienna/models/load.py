@@ -89,6 +89,11 @@ class InterconnectingConverter(StaticInjection):
 
     bus: Annotated[ACBus, Field(description="AC bus connected to the converter.")]
     dc_bus: Annotated[DCBus, Field(description="DC bus connected to the converter.")]
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(gt=0, description="Base power of the converter for per-unitization."),
+    ]
     active_power: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -103,11 +108,6 @@ class InterconnectingConverter(StaticInjection):
         MinMax,
         Unit("pu", base="base_power"),
         Field(description="Minimum and maximum active power limits for the converter."),
-    ]
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(gt=0, description="Base power of the converter for per-unitization."),
     ]
     reactive_power_limits: Annotated[
         MinMax | None,

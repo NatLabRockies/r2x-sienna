@@ -13,7 +13,7 @@ maintainers = [
   { name = "pesap", email = "pesap@users.noreply.github.com" },
 ]
 requires-python = ">=3.11, <3.14"
-dependencies = ["r2x-core>=0.4.0,<1.0.0"]
+dependencies = ["r2x-core @ git+https://github.com/NatLabRockies/r2x-core.git@d090584fb69d642a0f745bef3491a70c3780d261"]
 
 keywords = ["Sienna"]
 classifiers = [

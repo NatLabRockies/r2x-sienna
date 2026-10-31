@@ -30,7 +30,9 @@ from infrasys.supplemental_attribute_manager import SupplementalAttributeManager
 from infrasys.time_series_manager import TimeSeriesManager
 from infrasys.time_series_metadata_store import TimeSeriesMetadataStore
 from loguru import logger
-from r2x_core import Plugin, System, create_component
+from pydantic import ValidationError
+from r2x_core import Plugin, System
+from r2x_core.units import UnitSpec
 from rust_ok import Err, Ok, Result
 
 from r2x_sienna.models.enums import ReserveDirection, ReserveType
@@ -117,7 +119,7 @@ class SiennaParser(Plugin[SiennaConfig]):
             system_name = self.config.system_name or "Sienna"
             logger.info("Building Sienna system '{}'", system_name)
             system = System(name=system_name, system_base=self.config.system_base_power or None)
-            self._ctx.system = system
+            self.ctx.system = system
 
             self._parse_components()
             self._parse_supplemental_attributes()
@@ -126,7 +128,7 @@ class SiennaParser(Plugin[SiennaConfig]):
             self._ensure_hydro_dispatch_budget_time_series()
 
             elapsed = time.perf_counter() - t0
-            component_count = sum(1 for _ in system._component_mgr.iter_all())
+            component_count = sum(1 for _ in system.iter_all_components())
             logger.info(
                 "Sienna system '{}' built in {:.2f}s ({} components)",
                 system_name,
@@ -475,24 +477,40 @@ class SiennaParser(Plugin[SiennaConfig]):
             values["from_bus"] = values["arc"].from_to
             values["to_bus"] = values["arc"].to_from
 
-        result = create_component(component_type, skip_validation=self.skip_validation, **values)
-        if result.is_err():
+        values = {
+            key: value
+            for key, value in values.items()
+            if key in component_type.model_fields and value is not None
+        }
+        # PSY stores structured limits in internal units already. Core's "pu"
+        # envelope marks internal structured values, including rates in pu/min.
+        if not self.skip_validation:
+            for field, value in list(values.items()):
+                specs = component_type.model_fields[field].metadata
+                if (
+                    isinstance(value, dict)
+                    and not {"value", "unit"} <= value.keys()
+                    and any(isinstance(spec, UnitSpec) and spec.base is not None for spec in specs)
+                ):
+                    values[field] = {"value": value, "unit": "pu"}
+        try:
+            actual_component = (
+                component_type.model_construct(**values)
+                if self.skip_validation
+                else component_type.model_validate(values)
+            )
+        except ValidationError as error:
             logger.warning(
                 "Failed to create component {} '{}': {}",
                 component_type.__name__,
                 component_name,
-                result.err(),
+                error,
             )
             return None
-        actual_component = result.ok()
-        if actual_component is not None:
-            self.system._components.add(actual_component, deserialization_in_progress=True)
-            logger.trace(
-                "Created {} '{}' (uuid={})",
-                component_type.__name__,
-                component_name,
-                getattr(actual_component, "uuid", "?"),
-            )
+        self.system.add_component(actual_component, deserialization_in_progress=True)
+        logger.trace(
+            "Created {} '{}' (uuid={})", component_type.__name__, component_name, actual_component.uuid
+        )
         return actual_component
 
     def _deserialize_fields(self, component: dict[str, Any], cached_types: CachedTypeHelper) -> dict | None:

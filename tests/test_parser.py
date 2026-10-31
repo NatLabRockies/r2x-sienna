@@ -83,7 +83,7 @@ def test_parser_adds_default_hydro_reservoir_inflow_series(
     system = System(name="hydro-test")
     reservoir = HydroReservoir.example()
     system.add_component(reservoir)
-    parser._ctx.system = system
+    parser.ctx.system = system
 
     parser._ensure_hydro_reservoir_inflow_time_series()
 
@@ -109,7 +109,7 @@ def test_parser_preserves_existing_hydro_reservoir_time_series(
         initial_timestamp=datetime(year=2029, month=1, day=1, tzinfo=UTC),
     )
     system.add_time_series(existing_series, reservoir)
-    parser._ctx.system = system
+    parser.ctx.system = system
 
     parser._ensure_hydro_reservoir_inflow_time_series()
 
@@ -144,7 +144,7 @@ def test_parser_filters_hydro_reservoir_max_active_power(sienna_config: SiennaCo
         ),
         reservoir,
     )
-    parser._ctx.system = system
+    parser.ctx.system = system
 
     parser._filter_hydro_reservoir_max_active_power()
 
@@ -162,7 +162,7 @@ def test_parser_clears_hydro_reservoir_scaling_multipliers(
     system = System(name="hydro-test")
     reservoir = HydroReservoir.example()
     system.add_component(reservoir)
-    parser._ctx.system = system
+    parser.ctx.system = system
     timestamp = datetime(year=2029, month=1, day=1, tzinfo=UTC)
     for name in ("hydro_budget", "inflow"):
         system.add_time_series(
@@ -244,7 +244,7 @@ def test_parser_derives_inflow_timestamp_from_existing_series(mock_data_store: M
         initial_timestamp=datetime(year=2023, month=1, day=1, tzinfo=UTC),
     )
     system.add_time_series(existing_series, reservoir)
-    parser._ctx.system = system
+    parser.ctx.system = system
 
     parser._ensure_hydro_reservoir_inflow_time_series()
 
@@ -276,7 +276,7 @@ def test_parser_keeps_reservoir_inflow_source_only_when_system_has_forecasts(
     system._time_series_mgr._metadata_store._con.execute(
         "UPDATE time_series_associations SET time_series_type = 'DeterministicSingleTimeSeries'"
     )
-    parser._ctx.system = system
+    parser.ctx.system = system
 
     parser._ensure_hydro_reservoir_inflow_time_series()
 
@@ -449,14 +449,14 @@ class TestDeserializeComponentsNested:
                 system_name="test",
                 skip_validation=False,
             )
-            store = DataStore.from_data_files([], path=json_path.parent)
+            store = DataStore(path=json_path.parent)
             ctx = PluginContext(config, store=store)
             parser = SiennaParser.from_context(ctx)
             parser.on_prepare()
             parser.on_upgrade()
 
             system = System(name="test")
-            parser._ctx.system = system
+            parser.ctx.system = system
 
             # With the fix, this should raise ValueError with a clear message
             # instead of the cryptic AssertionError

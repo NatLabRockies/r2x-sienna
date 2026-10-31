@@ -20,6 +20,7 @@ from r2x_sienna import (
 from r2x_sienna.models import (
     ACBus,
     HydroReservoir,
+    HydroTurbine,
     MinMax,
     PowerLoad,
     PrimeMoversType,
@@ -823,12 +824,10 @@ def test_serialize_supplemental_attributes_skips_unsupported_type():
     attr = UnsupportedAttr()
     component = Component()
 
-    class ComponentMgr:
-        def iter_all(self):
-            return [component]
-
     class FakeSystem:
-        _component_mgr = ComponentMgr()
+        @staticmethod
+        def iter_all_components():
+            return [component]
 
         @staticmethod
         def iter_supplemental_attributes():
@@ -918,3 +917,19 @@ def test_to_psy_raises_on_validate_and_export_errors(simple_test_system, tmp_pat
     monkeypatch.setattr(SiennaExporter, "on_export", lambda self: Err("export failed"))
     with pytest.raises(Exception, match="Export failed"):
         exporter_mod.to_psy(config, simple_test_system, system_data, str(output_file))
+
+
+def test_psy_round_trip_preserves_existing_per_unit_limits(rts_system, sienna_config_rts):
+    """PSY limits are already per-unit and must not be divided a second time."""
+    source = json.loads(Path(sienna_config_rts.json_path).read_text())
+    raw = next(
+        component
+        for component in source["data"]["components"]
+        if component.get("__metadata__", {}).get("type") == "HydroTurbine"
+    )
+    turbine = rts_system.get_component(HydroTurbine, raw["name"])
+    assert turbine.active_power_limits.model_dump() == raw["active_power_limits"]
+    assert turbine.ramp_limits.model_dump() == raw["ramp_limits"]
+    serialized = serialize_component_to_psy(turbine)
+    assert serialized["active_power_limits"] == raw["active_power_limits"]
+    assert serialized["ramp_limits"] == raw["ramp_limits"]

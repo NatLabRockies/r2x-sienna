@@ -59,6 +59,14 @@ class Source(StaticInjection):
 
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
 
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     active_power: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -98,14 +106,6 @@ class Source(StaticInjection):
         Unit("deg"),
         Field(description="Internal angle of the source (radians)."),
     ]
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     operation_cost: Annotated[ImportExportCost, Field(description="Operational cost.")]
 
     @classmethod
@@ -131,6 +131,14 @@ class ThermalStandard(ThermalGen):
     """Thermal Standard device per PSY."""
 
     bus: Annotated[ACBus, Field(description="Bus where the generator is connected.")] | None = None
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     active_power: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -155,14 +163,6 @@ class ThermalStandard(ThermalGen):
         float,
         Unit("MVA", base="base_power"),
         Field(ge=0, description="Maximum output power rating of the unit (MVA)."),
-    ]
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
     ]
     active_power_limits: Annotated[MinMax, Field(description="Active power limits of the unit (MW).")]
     reactive_power_limits: Annotated[
@@ -230,6 +230,14 @@ class ThermalMultiStart(ThermalGen):
             description="Initial commitment condition at the start of a simulation (True = on or False = off)."
         ),
     ]
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     active_power: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -293,14 +301,6 @@ class ThermalMultiStart(ThermalGen):
         ThermalGenerationCost | MarketBidCost,
         Field(description="Operational cost of generation."),
     ]
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     time_at_status: Annotated[
         float,
         Unit("hour"),
@@ -344,6 +344,14 @@ class RenewableDispatch(RenewableGen):
     """
 
     bus: Annotated[ACBus, Field(description="Bus where the generator is connected.")] | None = None
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     active_power: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -385,14 +393,6 @@ class RenewableDispatch(RenewableGen):
         RenewableGenerationCost | MarketBidCost,
         Field(description="Operation cost for the renewable generator."),
     ]
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
 
     @classmethod
     def example(cls) -> "RenewableDispatch":
@@ -416,6 +416,14 @@ class RenewableNonDispatch(RenewableGen):
     """
 
     bus: Annotated[ACBus, Field(description="Bus where the generator is connected.")] | None = None
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     active_power: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -448,14 +456,6 @@ class RenewableNonDispatch(RenewableGen):
         float,
         Field(ge=0, le=1, description="Power factor between real and apparent power."),
     ] = 1.0
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
 
     @classmethod
     def example(cls) -> "RenewableNonDispatch":
@@ -479,6 +479,14 @@ class SynchronousCondenser(StaticInjection):
     """
 
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     reactive_power: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -494,14 +502,6 @@ class SynchronousCondenser(StaticInjection):
         Unit("pu", base="base_power"),
         Field(description="Minimum and maximum reactive power limits. Set to None if not applicable."),
     ] = None
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     active_power_losses: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -540,6 +540,14 @@ class EnergyReservoirStorage(Storage):
     ]
     storage_technology_type: Annotated[
         StorageTechs, Field(description="Storage Technology Complementary to EIA 923.")
+    ]
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
     ]
     storage_capacity: Annotated[
         float,
@@ -599,14 +607,6 @@ class EnergyReservoirStorage(Storage):
         Unit("pu", base="base_power"),
         Field(description="Minimum and maximum reactive power limits. Set to None if not applicable."),
     ] = None
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     operation_cost: Annotated[
         StorageCost | MarketBidCost,
         Field(description="Operational cost of storage."),
@@ -669,6 +669,14 @@ class HybridSystem(StaticInjection):
         ),
     ]
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization, which is commonly the same as rating.",
+        ),
+    ]
     active_power: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -680,14 +688,6 @@ class HybridSystem(StaticInjection):
         float,
         Unit("pu", base="base_power"),
         Field(description="Initial reactive power set point of the unit (MVAR)."),
-    ]
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization, which is commonly the same as rating.",
-        ),
     ]
     operation_cost: Annotated[
         "MarketBidCost",
@@ -834,6 +834,14 @@ class HydroDispatch(HydroGen):
     """
 
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     active_power: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -874,14 +882,6 @@ class HydroDispatch(HydroGen):
         Unit("hour"),
         Field(description="Minimum up and Minimum down time limits in hours."),
     ] = None
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     status: Annotated[
         bool,
         Field(
@@ -938,6 +938,14 @@ class HydroEnergyReservoir(HydroGen):
     """
 
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     active_power: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -978,14 +986,6 @@ class HydroEnergyReservoir(HydroGen):
         Unit("hour"),
         Field(description="Minimum up and Minimum down time limits in hours."),
     ] = None
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     storage_capacity: Annotated[
         float,
         Unit("pu-hour", base="base_power"),
@@ -1068,6 +1068,14 @@ class HydroPumpedStorage(HydroGen):
     """
 
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     active_power: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -1084,14 +1092,6 @@ class HydroPumpedStorage(HydroGen):
         float,
         Unit("MVA", base="base_power"),
         Field(ge=0, description="Maximum output power rating of the unit (MVA)."),
-    ]
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
     ]
     prime_mover_type: Annotated[
         PrimeMoversType, Field(description="Prime mover technology according to EIA 923.")
@@ -1325,6 +1325,14 @@ class HydroTurbine(HydroGen):
     """
 
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     active_power: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -1352,14 +1360,6 @@ class HydroTurbine(HydroGen):
         Unit("pu", base="base_power"),
         Field(description="Minimum and maximum reactive power limits. Set to None if not applicable."),
     ] = None
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     operation_cost: Annotated[
         "HydroGenerationCost | MarketBidCost",
         Field(description="Operational cost of generation."),
@@ -1442,6 +1442,14 @@ class HydroPumpTurbine(HydroGen):
     """
 
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     active_power: Annotated[
         float,
         Unit("pu", base="base_power"),
@@ -1497,14 +1505,6 @@ class HydroPumpTurbine(HydroGen):
         Unit("hour"),
         Field(description="Minimum up and Minimum down time limits in hours."),
     ] = None
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     status: Annotated[
         PumpHydroStatus,
         Field(description="Initial Operating status of a pumped storage hydro unit."),

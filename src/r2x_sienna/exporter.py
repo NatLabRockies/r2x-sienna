@@ -75,7 +75,7 @@ def build_attr_to_components_map(system: Any) -> dict[Any, list[Any]]:
 
     attr_to_components: dict[Any, list[Any]] = {}
     try:
-        for component in system._component_mgr.iter_all():
+        for component in system.iter_all_components():
             if not system.has_supplemental_attribute(component):
                 continue
             for attr in system.get_supplemental_attributes_with_component(component):
@@ -273,7 +273,7 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
             t_serialize = time.perf_counter()
             components: list[dict[str, Any]] = []
             skipped = 0
-            for component in self.system._component_mgr.iter_all():
+            for component in self.system.iter_all_components():
                 serialized = serialize_component_to_psy(component)
                 if serialized is not None:
                     components.append(serialized)
@@ -565,7 +565,7 @@ def to_psy(
         config=exporter_config, system=system, store=store
     )
     exporter = SiennaExporter()
-    exporter._ctx = ctx  # type: ignore[assignment]
+    exporter.ctx = ctx
     exporter.system_data = system_data
 
     result = exporter.on_validate()
