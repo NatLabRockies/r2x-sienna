@@ -4,7 +4,7 @@ from typing import Annotated
 
 from infrasys import Component
 from pydantic import Field, computed_field, field_serializer
-from r2x_core.units._mixins import HasPerUnit
+from r2x_core.units import HasPerUnit
 
 from r2x_sienna.units import ureg
 

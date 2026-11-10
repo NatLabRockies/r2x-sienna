@@ -30,7 +30,8 @@ from infrasys.supplemental_attribute_manager import SupplementalAttributeManager
 from infrasys.time_series_manager import TimeSeriesManager
 from infrasys.time_series_metadata_store import TimeSeriesMetadataStore
 from loguru import logger
-from r2x_core import Plugin, System, create_component
+from pydantic import ValidationError
+from r2x_core import Plugin, System
 from rust_ok import Err, Ok, Result
 
 from r2x_sienna.models.enums import ReserveDirection, ReserveType
@@ -117,7 +118,7 @@ class SiennaParser(Plugin[SiennaConfig]):
             system_name = self.config.system_name or "Sienna"
             logger.info("Building Sienna system '{}'", system_name)
             system = System(name=system_name, system_base=self.config.system_base_power or None)
-            self._ctx.system = system
+            self.ctx.system = system
 
             self._parse_components()
             self._parse_supplemental_attributes()
@@ -475,16 +476,25 @@ class SiennaParser(Plugin[SiennaConfig]):
             values["from_bus"] = values["arc"].from_to
             values["to_bus"] = values["arc"].to_from
 
-        result = create_component(component_type, skip_validation=self.skip_validation, **values)
-        if result.is_err():
+        valid_values = {
+            field_name: value
+            for field_name, value in values.items()
+            if field_name in component_type.model_fields and value is not None
+        }
+        try:
+            actual_component = (
+                component_type.model_construct(**valid_values)
+                if self.skip_validation
+                else component_type.model_validate(valid_values)
+            )
+        except ValidationError as exc:
             logger.warning(
                 "Failed to create component {} '{}': {}",
                 component_type.__name__,
                 component_name,
-                result.err(),
+                exc,
             )
             return None
-        actual_component = result.ok()
         if actual_component is not None:
             self.system._components.add(actual_component, deserialization_in_progress=True)
             logger.trace(

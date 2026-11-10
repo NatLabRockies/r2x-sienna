@@ -91,9 +91,9 @@ class MonitoredLine(ACBranch):
 class Line(ACBranch):
     """Class representing an AC transmission line."""
 
-    r: Annotated[float, Field(description="Resistance of the branch")]
-    x: Annotated[float, Field(description="Reactance of the branch")]
-    rating: Annotated[float, Field(ge=0, description="Thermal rating of the line.")]
+    r: Annotated[float | None, Field(description="Resistance of the branch")]
+    x: Annotated[float | None, Field(description="Reactance of the branch")]
+    rating: Annotated[float, Field(ge=0, description="Thermal rating of the line.")] | None
     b: Annotated[FromTo_ToFrom | None, Field(description="Shunt susceptance in pu")] = None
     g: Annotated[FromTo_ToFrom | None, Field(description="Shunt conductance in pu")] = None
     rating_b: Annotated[float, Field(description="Second thermal rating of the line.")] | None = None
@@ -101,6 +101,13 @@ class Line(ACBranch):
     active_power_flow: float
     reactive_power_flow: float
     angle_limits: MinMax
+
+    @field_validator("r", "x", "rating")
+    @classmethod
+    def require_electrical_parameters(cls, value: float | None) -> float:
+        if value is None:
+            raise ValueError("Line resistance, reactance, and rating are required")
+        return value
 
     @classmethod
     def example(cls) -> "Line":
@@ -140,10 +147,8 @@ class DiscreteControlledACBranch(ACBranch):
     @classmethod
     def example(cls) -> "DiscreteControlledACBranch":
         """Create an example DiscreteControlledACBranch instance."""
-        from_bus = ACBus.example()
-        from_bus.name = "Bus1"
-        to_bus = ACBus.example()
-        to_bus.name = "Bus2"
+        from_bus = ACBus.example().model_copy(update={"name": "Bus1"})
+        to_bus = ACBus.example().model_copy(update={"name": "Bus2"})
 
         return DiscreteControlledACBranch(
             name="ExampleDiscreteControlledACBranch",
@@ -634,7 +639,7 @@ class TwoTerminalLCCLine(TwoTerminalHVDCLine):
     active_power_flow: Annotated[
         float, Field(description="Initial condition of active power flow on the line (MW)")
     ]
-    r: Annotated[float, Field(description="Series resistance of the DC line in pu (SYSTEM_BASE)")]
+    r: Annotated[float | None, Field(description="Series resistance of the DC line in pu (SYSTEM_BASE)")]
     transfer_setpoint: Annotated[
         float,
         Field(
@@ -659,6 +664,14 @@ class TwoTerminalLCCLine(TwoTerminalHVDCLine):
         ),
     ]
     rectifier_bridges: Annotated[int, Field(description="Number of bridges in series in the rectifier side")]
+
+    @field_validator("r")
+    @classmethod
+    def require_resistance(cls, value: float | None) -> float:
+        if value is None:
+            raise ValueError("DC line resistance is required")
+        return value
+
     rectifier_delay_angle_limits: Annotated[
         MinMax, Field(description="Minimum and maximum rectifier firing delay angle (α) (radians)")
     ]
