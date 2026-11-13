@@ -534,6 +534,14 @@ class EnergyReservoirStorage(Storage):
     different types (e.g., PowerLoad and ACBus) can have the same name.
     """
 
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
     prime_mover_type: Annotated[
         PrimeMoversType, Field(description="Prime mover technology according to EIA 923.")
@@ -599,14 +607,6 @@ class EnergyReservoirStorage(Storage):
         Unit("pu", base="base_power"),
         Field(description="Minimum and maximum reactive power limits. Set to None if not applicable."),
     ] = None
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     operation_cost: Annotated[
         StorageCost | MarketBidCost,
         Field(description="Operational cost of storage."),
@@ -833,6 +833,14 @@ class HydroDispatch(HydroGen):
     different types (e.g., PowerLoad and ACBus) can have the same name.
     """
 
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
     active_power: Annotated[
         float,
@@ -874,14 +882,6 @@ class HydroDispatch(HydroGen):
         Unit("hour"),
         Field(description="Minimum up and Minimum down time limits in hours."),
     ] = None
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     status: Annotated[
         bool,
         Field(
@@ -1441,6 +1441,14 @@ class HydroPumpTurbine(HydroGen):
     different types (e.g., PowerLoad and ACBus) can have the same name.
     """
 
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(
+            ge=0,
+            description="Base power of the unit (MVA) for per unitization.",
+        ),
+    ]
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
     active_power: Annotated[
         float,
@@ -1497,14 +1505,6 @@ class HydroPumpTurbine(HydroGen):
         Unit("hour"),
         Field(description="Minimum up and Minimum down time limits in hours."),
     ] = None
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     status: Annotated[
         PumpHydroStatus,
         Field(description="Initial Operating status of a pumped storage hydro unit."),
