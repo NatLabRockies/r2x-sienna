@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.1](https://github.com/NatLabRockies/r2x-sienna/compare/v0.5.0...v0.5.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* add generator base power requirement ([#50](https://github.com/NatLabRockies/r2x-sienna/issues/50)) ([dcbd01d](https://github.com/NatLabRockies/r2x-sienna/commit/dcbd01d9e5a03a832ade7a628645ff95d0c83615))
+
+
+### Documentation
+
+* align Sienna guides with R2X documentation ([#42](https://github.com/NatLabRockies/r2x-sienna/issues/42)) ([0c643fd](https://github.com/NatLabRockies/r2x-sienna/commit/0c643fdbdc5709a7954ad916f244e77b90ecaff5))
+
 ## [0.5.0](https://github.com/NatLabRockies/r2x-sienna/compare/v0.4.2...v0.5.0) (2026-09-15)
 
 
