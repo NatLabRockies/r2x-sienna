@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from infrasys.value_curves import InputOutputCurve, LinearCurve
-from pydantic import Field
+from pydantic import Field, ValidationInfo, ValidatorFunctionWrapHandler, field_validator
 from r2x_core import Unit
 
 from r2x_sienna.models.load import InterruptiblePowerLoad, PowerLoad
@@ -223,6 +223,11 @@ class ThermalMultiStart(ThermalGen):
     different types (e.g., PowerLoad and ACBus) can have the same name.
     """
 
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(ge=0, description="Base power of the unit (MVA) for per unitization."),
+    ]
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
     status: Annotated[
         bool,
@@ -293,14 +298,6 @@ class ThermalMultiStart(ThermalGen):
         ThermalGenerationCost | MarketBidCost,
         Field(description="Operational cost of generation."),
     ]
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     time_at_status: Annotated[
         float,
         Unit("hour"),
@@ -343,6 +340,11 @@ class RenewableDispatch(RenewableGen):
     This type of generator have a hourly capacity factor profile.
     """
 
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(ge=0, description="Base power of the unit (MVA) for per unitization."),
+    ]
     bus: Annotated[ACBus, Field(description="Bus where the generator is connected.")] | None = None
     active_power: Annotated[
         float,
@@ -384,14 +386,6 @@ class RenewableDispatch(RenewableGen):
     operation_cost: Annotated[
         RenewableGenerationCost | MarketBidCost,
         Field(description="Operation cost for the renewable generator."),
-    ]
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
     ]
 
     @classmethod
@@ -476,8 +470,14 @@ class SynchronousCondenser(StaticInjection):
 
     Components of the same type (e.g., PowerLoad) must have unique names, but components of
     different types (e.g., PowerLoad and ACBus) can have the same name.
+    A zero power base is supported only with absent or zero reactive power limits.
     """
 
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(ge=0, description="Base power of the unit (MVA) for per unitization."),
+    ]
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
     reactive_power: Annotated[
         float,
@@ -494,19 +494,23 @@ class SynchronousCondenser(StaticInjection):
         Unit("pu", base="base_power"),
         Field(description="Minimum and maximum reactive power limits. Set to None if not applicable."),
     ] = None
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     active_power_losses: Annotated[
         float,
         Unit("pu", base="base_power"),
         Field(ge=0, description="Active Power Loss incurred by having the unit online."),
     ] = 0.0
+
+    @field_validator("reactive_power_limits", mode="wrap")
+    @classmethod
+    def _validate_zero_base_limits(
+        cls, value: object, handler: ValidatorFunctionWrapHandler, info: ValidationInfo
+    ) -> MinMax | None:
+        if value is not None and info.data and info.data.get("base_power") == 0.0:
+            limits = MinMax.model_validate(value)
+            if limits.min != 0.0 or limits.max != 0.0:
+                raise ValueError("Nonzero reactive power limits require positive base_power")
+            return limits
+        return handler(value)
 
     @classmethod
     def example(cls) -> "SynchronousCondenser":
@@ -937,6 +941,11 @@ class HydroEnergyReservoir(HydroGen):
     different types (e.g., PowerLoad and ACBus) can have the same name.
     """
 
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(ge=0, description="Base power of the unit (MVA) for per unitization."),
+    ]
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
     active_power: Annotated[
         float,
@@ -978,14 +987,6 @@ class HydroEnergyReservoir(HydroGen):
         Unit("hour"),
         Field(description="Minimum up and Minimum down time limits in hours."),
     ] = None
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     storage_capacity: Annotated[
         float,
         Unit("pu-hour", base="base_power"),
@@ -1324,6 +1325,11 @@ class HydroTurbine(HydroGen):
     different types (e.g., PowerLoad and ACBus) can have the same name.
     """
 
+    base_power: Annotated[
+        float,
+        Unit("MVA"),
+        Field(ge=0, description="Base power of the unit (MVA) for per unitization."),
+    ]
     bus: Annotated[ACBus, Field(description="Bus that this component is connected to.")] | None = None
     active_power: Annotated[
         float,
@@ -1352,14 +1358,6 @@ class HydroTurbine(HydroGen):
         Unit("pu", base="base_power"),
         Field(description="Minimum and maximum reactive power limits. Set to None if not applicable."),
     ] = None
-    base_power: Annotated[
-        float,
-        Unit("MVA"),
-        Field(
-            ge=0,
-            description="Base power of the unit (MVA) for per unitization.",
-        ),
-    ]
     operation_cost: Annotated[
         "HydroGenerationCost | MarketBidCost",
         Field(description="Operational cost of generation."),

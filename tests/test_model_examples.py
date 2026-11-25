@@ -1,5 +1,8 @@
 """Test model example methods."""
 
+import pytest
+from pydantic import ValidationError
+
 
 def test_renewable_models():
     """Test renewable models specifically."""
@@ -30,6 +33,65 @@ def test_thermal_standard_model():
     ]
 
     assert all(field in ts_dict for field in required_fields)
+
+
+def test_base_power_is_available_to_unit_conversions():
+    """Models using base-power units validate nested limits when constructed from data."""
+    from r2x_sienna.models.generators import (
+        HydroEnergyReservoir,
+        HydroTurbine,
+        RenewableDispatch,
+        SynchronousCondenser,
+        ThermalMultiStart,
+    )
+    from r2x_sienna.models.load import InterconnectingConverter
+
+    models = (
+        ThermalMultiStart,
+        SynchronousCondenser,
+        HydroEnergyReservoir,
+        HydroTurbine,
+        InterconnectingConverter,
+    )
+    for model in models:
+        model.example()
+
+    renewable = RenewableDispatch.example()
+    renewable_data = renewable.model_dump(mode="python", round_trip=True)
+    renewable_data["reactive_power_limits"] = {"min": -0.1, "max": 0.1}
+    RenewableDispatch.model_validate(renewable_data)
+
+
+@pytest.mark.parametrize("limits", [None, {"min": 0.0, "max": 0.0}])
+def test_synchronous_condenser_zero_base_power(limits):
+    """Zero-base condensers can retain absent or zero reactive power limits."""
+    from r2x_sienna.models.generators import SynchronousCondenser
+
+    condenser = SynchronousCondenser(
+        name="zero-base-condenser",
+        base_power=0.0,
+        reactive_power=0.0,
+        rating=1.0,
+        reactive_power_limits=limits,
+    )
+
+    assert condenser.base_power == 0.0
+    assert condenser.model_dump(mode="json")["reactive_power_limits"] == limits
+
+
+@pytest.mark.parametrize("limits", [{"min": -1.0, "max": 0.0}, {"min": 0.0, "max": 1.0}])
+def test_synchronous_condenser_zero_base_rejects_nonzero_limits(limits):
+    """Nonzero limits cannot be per-unitized on a zero base."""
+    from r2x_sienna.models.generators import SynchronousCondenser
+
+    with pytest.raises(ValidationError, match="Nonzero reactive power limits require positive base_power"):
+        SynchronousCondenser(
+            name="invalid-zero-base-condenser",
+            base_power=0.0,
+            reactive_power=0.0,
+            rating=1.0,
+            reactive_power_limits=limits,
+        )
 
 
 def test_service_and_topology_examples():
