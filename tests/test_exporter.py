@@ -82,6 +82,49 @@ def test_transformer_export_preserves_positive_and_omits_zero_base_voltages():
     assert transformer.base_voltage_secondary == 0.0
 
 
+@pytest.mark.parametrize("transformer_type", [Transformer3W, PhaseShiftingTransformer3W])
+def test_three_winding_export_omits_unset_winding_ratings(transformer_type):
+    """PowerSystems.jl requires Float64 winding ratings, so unset values must use its 0.0 default."""
+    transformer = transformer_type.example()
+    transformer.rating_primary = 50.0
+    transformer.rating_secondary = None
+    transformer.rating_tertiary = None
+
+    serialized = serialize_component_to_psy(transformer)
+
+    assert serialized["rating_primary"] == 50.0
+    assert "rating_secondary" not in serialized
+    assert "rating_tertiary" not in serialized
+
+
+def test_three_winding_transformer_with_null_bus_angles_roundtrips(tmp_path):
+    """Null angles and unset winding fields must survive export and re-parsing."""
+    from r2x_core import System as R2XSystem
+
+    transformer = Transformer3W.example()
+    system = R2XSystem(name="transformer-3w", system_base=100.0, auto_add_composed_components=True)
+    system.add_component(transformer)
+    output_file = tmp_path / "system.json"
+    exporter = SiennaExporter.from_context(
+        PluginContext(config=SiennaConfig(output_path=str(output_file)), system=system)
+    )
+    exporter.should_export_time_series = False
+    exporter.run()
+
+    parser = SiennaParser.from_context(
+        PluginContext(
+            config=SiennaConfig(json_path=str(output_file), model_year=2029),
+            store=DataStore(path=tmp_path),
+        )
+    )
+    parsed_system = parser.run().system
+    parsed = parsed_system.get_component(Transformer3W, transformer.name)
+
+    assert all(bus.angle is None for bus in parsed_system.get_components(ACBus))
+    assert parsed.base_voltage_primary == transformer.base_voltage_primary
+    assert parsed.rating_primary is None
+
+
 def test_transformer_base_voltages_roundtrip(tmp_path):
     """Unspecified bases are recovered from the connected buses when parsing the PSY export."""
     from r2x_core import System as R2XSystem

@@ -482,6 +482,21 @@ def test_transformer_upgrades_keep_unresolved_base_voltages_unset() -> None:
         assert all(comp.get(field) is None for field in fields)
 
 
+def test_upgrade_ac_bus_accepts_missing_angles() -> None:
+    """PowerSystems.jl allows a null bus angle, so the upgrader must not compare it numerically."""
+    buses = [
+        {"__metadata__": {"type": "ACBus"}, "name": "null", "angle": None},
+        {"__metadata__": {"type": "ACBus"}, "name": "missing"},
+        {"__metadata__": {"type": "ACBus"}, "name": "out-of-range", "angle": 2.0},
+        {"__metadata__": {"type": "ACBus"}, "name": "valid", "angle": 0.5},
+    ]
+
+    result = upgrade_steps.upgrade_ac_bus({"data": {"components": buses}})
+
+    angles = {bus["name"]: bus.get("angle") for bus in result["data"]["components"]}
+    assert angles == {"null": None, "missing": None, "out-of-range": 0.0, "valid": 0.5}
+
+
 def test_data_upgrader_feature_and_duration_helpers() -> None:
     assert data_upgrader._iso_8601_duration_from_milliseconds(None) is None
     assert data_upgrader._iso_8601_duration_from_milliseconds("") is None

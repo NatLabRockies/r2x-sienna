@@ -210,6 +210,11 @@ def serialize_component_to_psy(
         for field in ("base_voltage_primary", "base_voltage_secondary", "base_voltage_tertiary"):
             if field in data and not data[field]:
                 del data[field]
+    if isinstance(component, ThreeWindingTransformer):
+        # PowerSystems.jl requires Float64 winding ratings and defaults omitted ones to 0.0.
+        for field in ("rating_primary", "rating_secondary", "rating_tertiary"):
+            if field in data and data[field] is None:
+                del data[field]
 
     if not include:
         include = {}

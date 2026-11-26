@@ -57,10 +57,13 @@ The registered system steps currently handle these compatibility cases:
   created where required by time-series ownership.
 - **Hydro prime movers:** fills missing `prime_mover_type` values for hydro
   turbine and pump-turbine components.
-- **Bus validation:** resets out-of-range AC bus angles to a valid default.
+- **Bus validation:** resets out-of-range AC bus angles to a valid default and
+  preserves absent (`null`) angles, which PowerSystems.jl permits.
 - **Transformer fields:** repairs two-winding, tap, phase-shifting, three-
   winding, and phase-shifting three-winding transformer fields using connected
-  bus voltages, arc relationships, and system base power.
+  bus voltages, arc relationships, and system base power. Missing or `0.0` kV
+  base voltages are replaced with connected-bus voltages, or left unset when no
+  bus voltage is available.
 - **AC branch limits:** fills missing `rating_b` and `rating_c` values for
   `Line` and `MonitoredLine` components.
 - **HVDC naming:** renames legacy `TwoTerminalHVDCLine` metadata to

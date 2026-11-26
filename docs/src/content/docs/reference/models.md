@@ -149,6 +149,9 @@ overlapping component names.
   missing winding base voltages default to `None`. PSY exports omit missing or `0.0` kV bases so
   PowerSystems.jl derives them from the connected buses; the upgrader also replaces legacy `0.0`
   bases with connected-bus voltages when parsing.
+- Three-winding transformer ratings:
+  unset `rating_primary`, `rating_secondary`, and `rating_tertiary` values are omitted from PSY
+  exports so PowerSystems.jl applies its required `0.0` default instead of rejecting `null`.
 - Static injection linkage:
   static-injection models support optional `dynamic_injector` linkage to dynamic models.
 - Load conformity naming:

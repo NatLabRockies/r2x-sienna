@@ -518,9 +518,10 @@ def upgrade_ac_bus(system_data: dict[str, Any]) -> dict[str, Any]:
             new_components.append(comp)
             continue
 
-        if comp["angle"] >= 1.571 or comp["angle"] <= -1.571:
+        angle = comp.get("angle")
+        if isinstance(angle, int | float) and not -1.571 < angle < 1.571:
             logger.warning(
-                f"Bus {comp['name']} has an angle of {comp['angle']}, which is outside the valid range [-1.571, 1.571]. Setting angle to 0.0.",
+                f"Bus {comp['name']} has an angle of {angle}, which is outside the valid range [-1.571, 1.571]. Setting angle to 0.0.",
             )
             comp["angle"] = 0.0
 
