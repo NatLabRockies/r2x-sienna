@@ -25,8 +25,10 @@ from r2x_sienna.models import (
     PrimeMoversType,
     RenewableDispatch,
     StorageCost,
+    SynchronousCondenser,
     ThermalFuels,
     ThermalGenerationCost,
+    ThermalMultiStart,
     ThermalStandard,
     Transformer2W,
 )
@@ -38,6 +40,81 @@ def test_storage_cost_omits_null_variable_curves():
 
     assert "charge_variable_cost" not in serialized
     assert "discharge_variable_cost" not in serialized
+
+
+def test_thermal_trajectory_exports_without_unit_envelope():
+    """Structured unit fields without a custom serializer still use the PSY shape."""
+    thermal = ThermalMultiStart.example()
+    serialized = serialize_component_to_psy(thermal)
+
+    assert serialized["power_trajectory"] == {"startup": 0.5, "shutdown": 0.25}
+
+
+def test_unvalidated_limits_export_without_unit_envelope():
+    """Components parsed without validation retain plain PSY limits on export."""
+    limits = {"min": -1.0, "max": 1.0}
+    condenser = SynchronousCondenser.model_construct(
+        name="unvalidated-condenser",
+        base_power=100.0,
+        reactive_power=0.0,
+        rating=1.0,
+        reactive_power_limits=limits,
+    )
+    with pytest.warns(UserWarning, match="Pydantic serializer warnings"):
+        serialized = serialize_component_to_psy(condenser)
+
+    assert serialized["reactive_power_limits"] == limits
+
+
+@pytest.mark.parametrize("base_power", [0.0, 100.0])
+@pytest.mark.parametrize("unit_envelope", [False, True])
+def test_structured_unit_limits_roundtrip(base_power, unit_envelope, tmp_path):
+    """PSY limits retain their per-unit values and parsed components bind their system base."""
+    from r2x_core import System as R2XSystem
+
+    bus = ACBus(name="condenser-bus", number=1, base_voltage=230.0, angle=0.0, magnitude=1.0)
+    condenser = SynchronousCondenser(
+        name="condenser",
+        bus=bus,
+        base_power=base_power,
+        reactive_power=0.0,
+        rating=1.0,
+        reactive_power_limits=MinMax(min=-base_power, max=base_power),
+    )
+    system = R2XSystem(name="unit-roundtrip", system_base=200.0)
+    system.add_components(bus, condenser)
+    output_file = tmp_path / "system.json"
+    exporter = SiennaExporter.from_context(
+        PluginContext(
+            config=SiennaConfig(output_path=str(output_file), system_base_power=200.0),
+            system=system,
+            store=DataStore(path=tmp_path),
+        )
+    )
+    exporter.should_export_time_series = False
+    exporter.run()
+
+    serialized = json.loads(output_file.read_text())
+    condenser_data = next(c for c in serialized["data"]["components"] if c["name"] == condenser.name)
+    expected_limits = {"min": 0.0, "max": 0.0} if base_power == 0.0 else {"min": -1.0, "max": 1.0}
+    assert condenser_data["reactive_power_limits"] == expected_limits
+    if unit_envelope:
+        condenser_data["reactive_power_limits"] = {"value": expected_limits, "unit": "pu"}
+        output_file.write_text(json.dumps(serialized))
+
+    parser = SiennaParser.from_context(
+        PluginContext(
+            config=SiennaConfig(json_path=str(output_file), system_base_power=200.0, model_year=2029),
+            store=DataStore(path=tmp_path),
+        )
+    )
+    parsed_system = parser.run().system
+    parsed = parsed_system.get_component(SynchronousCondenser, condenser.name)
+    assert parsed.reactive_power_limits == condenser.reactive_power_limits
+    assert parsed.base_power == base_power
+    assert parsed.system_base == 200.0
+    assert parsed.bus is parsed_system.get_component(ACBus, bus.name)
+    assert parsed.bus.system_base == 200.0
 
 
 @pytest.fixture

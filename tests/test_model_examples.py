@@ -76,7 +76,11 @@ def test_synchronous_condenser_zero_base_power(limits):
     )
 
     assert condenser.base_power == 0.0
-    assert condenser.model_dump(mode="json")["reactive_power_limits"] == limits
+    serialized = condenser.model_dump(mode="json", round_trip=True)
+    expected = None if limits is None else {"value": limits, "unit": "pu"}
+    assert serialized["reactive_power_limits"] == expected
+    restored = SynchronousCondenser.model_validate(serialized)
+    assert restored.reactive_power_limits == condenser.reactive_power_limits
 
 
 @pytest.mark.parametrize("limits", [{"min": -1.0, "max": 0.0}, {"min": 0.0, "max": 1.0}])

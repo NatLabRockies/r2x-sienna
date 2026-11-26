@@ -565,7 +565,7 @@ def to_psy(
         config=exporter_config, system=system, store=store
     )
     exporter = SiennaExporter()
-    exporter._ctx = ctx  # type: ignore[assignment]
+    exporter.ctx = ctx
     exporter.system_data = system_data
 
     result = exporter.on_validate()

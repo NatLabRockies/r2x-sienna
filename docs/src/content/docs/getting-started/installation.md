@@ -16,7 +16,7 @@ python -m pip install r2x-sienna
 ```
 
 This installs the format package and its dependencies, including
-[r2x-core](https://github.com/NatLabRockies/r2x-core) and
+[r2x-core](https://github.com/NatLabRockies/r2x-core) 1.x (`>=1.0.0,<2.0.0`) and
 [Infrasys](https://github.com/NatLabRockies/infrasys).
 A Julia installation is not required for parsing and exporting the tutorial fixture in Python.
 Published distributions and their Python requirements are on

@@ -506,6 +506,8 @@ class SynchronousCondenser(StaticInjection):
         cls, value: object, handler: ValidatorFunctionWrapHandler, info: ValidationInfo
     ) -> MinMax | None:
         if value is not None and info.data and info.data.get("base_power") == 0.0:
+            if isinstance(value, dict) and set(value) == {"value", "unit"} and value["unit"] == "pu":
+                value = value["value"]
             limits = MinMax.model_validate(value)
             if limits.min != 0.0 or limits.max != 0.0:
                 raise ValueError("Nonzero reactive power limits require positive base_power")

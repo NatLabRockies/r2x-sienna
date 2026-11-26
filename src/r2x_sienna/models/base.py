@@ -35,7 +35,7 @@ class SiennaComponent(HasPerUnit, Component):
     --------
     Create a custom Sienna component:
 
-    >>> from r2x_core.units._specs import UnitSpec
+    >>> from r2x_core import Unit
     >>> from typing import Annotated
     >>> from pydantic import Field
     >>>
@@ -44,17 +44,17 @@ class SiennaComponent(HasPerUnit, Component):
     ...     active_power_limits_max: Annotated[
     ...         float,
     ...         Field(description="Maximum active power"),
-    ...         UnitSpec("MW")
+    ...         Unit("MW")
     ...     ]
     ...     base_power: Annotated[
     ...         float,
     ...         Field(description="Base power for per-unit calculations"),
-    ...         UnitSpec("MW")
+    ...         Unit("MW")
     ...     ]
     ...     active_power_limits_max_pu: Annotated[
     ...         float,
     ...         Field(description="Maximum active power in per-unit"),
-    ...         UnitSpec("dimensionless", base="base_power")
+    ...         Unit("dimensionless", base="base_power")
     ...     ]
 
     Use the component with per-unit display:
@@ -83,7 +83,7 @@ class SiennaComponent(HasPerUnit, Component):
     -----
     When components inheriting from SiennaComponent are added to an r2x-core System,
     they automatically receive the system's base power for system-base per-unit
-    calculations via the _system_base attribute.
+    calculations via the public system_base property.
 
     The ext field automatically handles Pint Quantity serialization, converting
     quantity objects to their magnitude values during JSON serialization.

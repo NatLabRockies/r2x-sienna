@@ -394,7 +394,7 @@ class TestSiennaComponent:
         assert gen.class_type == "ThermalStandard"
 
     def test_unit_specs_integration(self):
-        """Test that UnitSpec integration works correctly if available."""
+        """Test that unit specifications are exposed through the public core API."""
         area = Area(name="TestArea")
         load_zone = LoadZone(name="TestLoadZone")
         bus = ACBus(
@@ -423,14 +423,8 @@ class TestSiennaComponent:
             time_at_status=1000.0,
         )
 
-        # Get unit specs map if method exists
-        if hasattr(gen, "_get_unit_specs_map"):
-            specs_map = gen._get_unit_specs_map()
-            # Test that we can access unit specs
-            assert isinstance(specs_map, dict)
-        else:
-            # Skip test if method doesn't exist
-            pytest.skip("_get_unit_specs_map method not implemented")
+        assert gen.unit_specs["base_power"].unit == "MVA"
+        assert gen.unit_specs["reactive_power"].base == "base_power"
 
     def test_repr_with_units(self):
         """Test that __repr__ shows component information correctly."""
