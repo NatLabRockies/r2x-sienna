@@ -24,10 +24,9 @@ When `SiennaParser` is run with a disk-backed `json_path`, the flow is:
   embedded metadata when the file exists and the legacy layout is detected.
 8. Continue with parser deserialization.
 
-The parser calls this flow from `SiennaParser.on_upgrade()`. Automatic upgrades
-are therefore file-backed: provide `json_path` in `SiennaConfig`. A stdin
-payload has no source file to rewrite and should be upgraded separately before
-it is passed to a parser context when compatibility transformations are needed.
+The parser calls this flow from `SiennaParser.on_upgrade()`. Parsing is
+file-backed: provide `json_path` in `SiennaConfig`, and keep the HDF5 time series
+companion next to it.
 
 ## Step Registration And Ordering
 

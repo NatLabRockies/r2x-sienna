@@ -129,11 +129,16 @@ class ReserveNonSpinning(Service):
     deployed_fraction: Annotated[
         NonNegativeFloat,
         Field(ge=0.0, le=1.0, description="Fraction of service procurement assumed to be deployed."),
-    ] = 1.0
+    ] = 0.0
 
 
 class VariableReserveNonSpinning(ReserveNonSpinning):
     """Variable non-spinning reserve service."""
+
+    sustained_time: Annotated[
+        NonNegativeFloat,
+        Field(description="Time in seconds the reserve contribution must be sustained."),
+    ] = 14400.0
 
 
 class ConstantReserveNonSpinning(ReserveNonSpinning):

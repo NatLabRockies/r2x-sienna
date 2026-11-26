@@ -64,7 +64,7 @@ class FACTSControlDevice(StaticInjection):
     ] = 0
     reactive_power_required: Annotated[
         float, Field(description="Total MVAr required to hold voltage at sending bus, in %")
-    ] = 100.0
+    ] = 0.0
 
     @classmethod
     def example(cls) -> "FACTSControlDevice":
@@ -190,6 +190,10 @@ class PowerLoad(StaticLoad):
             bus=ACBus.example(),
             conformity=LoadConformity.CONFORMING,
             active_power=ActivePower(1000, "MW"),
+            reactive_power=0.0,
+            max_active_power=ActivePower(1000, "MW"),
+            max_reactive_power=ActivePower(0, "MW"),
+            base_power=ApparentPower(1000, "MVA"),
         )
 
 

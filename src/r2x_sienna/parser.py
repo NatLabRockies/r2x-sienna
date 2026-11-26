@@ -8,7 +8,7 @@ import time
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import IO, Any
+from typing import Any
 from uuid import UUID
 
 import h5py
@@ -52,7 +52,6 @@ class SiennaParser(Plugin[SiennaConfig]):
 
     def __init__(self) -> None:
         """Initialize with internal state only."""
-        self._use_stdin: bool = False
         self.data_information: dict[str, Any] = {}
         self.system_information: dict[str, Any] = {}
         self.component_fields: dict[str, Any] = {}
@@ -63,7 +62,6 @@ class SiennaParser(Plugin[SiennaConfig]):
         """Prepare and normalize configuration and time-related data.
 
         Initializes internal data structures required for component building.
-        Supports reading from stdin_payload when available.
 
         Returns
         -------
@@ -72,16 +70,12 @@ class SiennaParser(Plugin[SiennaConfig]):
         """
         self.skip_validation: bool = getattr(self.config, "skip_validation", False)
 
-        # Store stdin_payload if provided (for r2x-core pipeline support)
-        stdin_payload: IO[str] | IO[bytes] | str | bytes | None = getattr(self, "_stdin_payload", None)
-        self._use_stdin = stdin_payload is not None
-
         config = self._require_config()
         logger.info(
             "Preparing SiennaParser (system_name={}, skip_validation={}, source={})",
             config.system_name or "<default>",
             self.skip_validation,
-            "stdin" if self._use_stdin else config.json_path or "<none>",
+            config.json_path or "<none>",
         )
 
         return Ok(None)
@@ -95,7 +89,7 @@ class SiennaParser(Plugin[SiennaConfig]):
             Ok(None) on success (no early system return), Err() with error message on failure
         """
         config = self._require_config()
-        logger.debug("Running Sienna data upgrades for: {}", config.json_path or "<stdin>")
+        logger.debug("Running Sienna data upgrades for: {}", config.json_path)
         t0 = time.perf_counter()
         result = run_sienna_upgrades(json_path=config.json_path, ctx=self.ctx)
         elapsed = time.perf_counter() - t0
@@ -148,42 +142,18 @@ class SiennaParser(Plugin[SiennaConfig]):
     def _parse_components(self) -> None:
         """Create a dictionary by component type."""
         logger.info("Parsing Sienna system components")
-        # Load system data from stdin or from json_path
-        stdin_payload: IO[str] | IO[bytes] | str | bytes | None = getattr(self, "_stdin_payload", None)
-        if self._use_stdin:
-            logger.debug("Reading system data from stdin_payload")
-            if stdin_payload is None:
-                raise ValueError("stdin payload not available despite _use_stdin being True")
+        config = self._require_config()
+        if not config.json_path:
+            raise ValueError("json_path must be specified in SiennaConfig")
 
-            t0 = time.perf_counter()
-            if isinstance(stdin_payload, (str, bytes)):
-                json_str = stdin_payload.decode() if isinstance(stdin_payload, bytes) else stdin_payload
-                system_json = json.loads(json_str)
-            else:
-                content = stdin_payload.read()
-                json_str = content.decode() if isinstance(content, bytes) else content
-                system_json = json.loads(json_str)
-            logger.debug("Parsed stdin JSON in {:.2f}s", time.perf_counter() - t0)
-
-            if "system" in system_json:
-                system_data = system_json["system"]
-            else:
-                system_data = system_json
-
-            json_data = system_data.pop("data", system_data.copy())
-        else:
-            config = self._require_config()
-            if not config.json_path:
-                raise ValueError("json_path must be specified in SiennaConfig when not reading from stdin")
-
-            sys_path = Path(config.json_path)
-            file_size_mb = sys_path.stat().st_size / (1024 * 1024)
-            logger.debug("Loading JSON from {} ({:.1f} MB)", sys_path, file_size_mb)
-            t0 = time.perf_counter()
-            with open(sys_path) as f:
-                system_data = json.load(f)
-            logger.debug("JSON parsed in {:.2f}s", time.perf_counter() - t0)
-            json_data = system_data.pop("data")
+        sys_path = Path(config.json_path)
+        file_size_mb = sys_path.stat().st_size / (1024 * 1024)
+        logger.debug("Loading JSON from {} ({:.1f} MB)", sys_path, file_size_mb)
+        t0 = time.perf_counter()
+        with open(sys_path) as f:
+            system_data = json.load(f)
+        logger.debug("JSON parsed in {:.2f}s", time.perf_counter() - t0)
+        json_data = system_data.pop("data")
 
         component_data = json_data.pop("components")
         self.data_information = json_data

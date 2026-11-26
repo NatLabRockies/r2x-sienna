@@ -79,6 +79,11 @@ class MonitoredLine(ACBranch):
         return MonitoredLine(
             name="ExampleMonitoredLine",
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
+            r=0.01,
+            x=0.05,
+            b=FromTo_ToFrom(from_to=0.0, to_from=0.0),
+            flow_limits=FromTo_ToFrom(from_to=100.0, to_from=100.0),
+            angle_limits=MinMax(min=-0.03, max=0.03),
             rating=100,
             rating_b=120,
             rating_c=120,
@@ -116,6 +121,7 @@ class Line(ACBranch):
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
             r=0.01,
             x=0.05,
+            b=FromTo_ToFrom(from_to=0.0, to_from=0.0),
             rating=100,
             rating_b=120,
             rating_c=150,
@@ -472,6 +478,9 @@ class Transformer2W(TwoWindingTransformer):
     def example(cls) -> "Transformer2W":
         return Transformer2W(
             name="Example2WTransformer",
+            r=0.01,
+            x=0.05,
+            base_power=100.0,
             rating=100,
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
             active_power_flow=100,
@@ -508,6 +517,9 @@ class TapTransformer(TwoWindingTransformer):
     def example(cls) -> "TapTransformer":
         return TapTransformer(
             name="ExampleTapTransformer",
+            r=0.01,
+            x=0.05,
+            base_power=100.0,
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
             rating=100,
             active_power_flow=50.0,
@@ -552,6 +564,9 @@ class PhaseShiftingTransformer(TwoWindingTransformer):
     def example(cls) -> "PhaseShiftingTransformer":
         return PhaseShiftingTransformer(
             name="ExamplePhaseShiftingTransformer",
+            r=0.01,
+            x=0.05,
+            base_power=100.0,
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
             rating=100,
             active_power_flow=50.0,
@@ -611,7 +626,7 @@ class TModelHVDCLine(DCBranch):
             name="ExampleDCLine",
             arc=Arc(from_to=DCBus.example(), to_from=DCBus.example()),
             rating_up=100,
-            rating_down=80,
+            rating_down=-80,
         )
 
 

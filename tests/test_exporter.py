@@ -48,6 +48,170 @@ def test_storage_cost_omits_null_variable_curves():
     assert "discharge_variable_cost" not in serialized
 
 
+def test_export_maps_infinite_defaults_to_psy_sentinels():
+    """orjson writes inf as null, so infinite defaults must use PowerSystems.jl sentinels."""
+    from r2x_sienna.models import Source, ThermalMultiStart
+
+    thermal = serialize_component_to_psy(ThermalMultiStart.example())
+    source = serialize_component_to_psy(Source.example())
+
+    assert thermal["time_at_status"] == 1e4
+    assert source["operation_cost"]["energy_import_weekly_limit"] == 1e6
+    assert source["operation_cost"]["energy_export_weekly_limit"] == 1e6
+
+
+def test_export_rejects_other_non_finite_values(simple_test_system, tmp_path):
+    """Other non-finite values would silently become null in the PSY JSON."""
+    generator = next(iter(simple_test_system.get_components(ThermalStandard)))
+    generator.active_power = float("nan")
+    output = tmp_path / "system.json"
+    exporter = SiennaExporter.from_context(
+        PluginContext(config=SiennaConfig(output_path=str(output)), system=simple_test_system)
+    )
+    exporter.should_export_time_series = False
+
+    result = exporter.on_export()
+
+    assert result.is_err()
+    assert "active_power" in str(result.err())
+    assert not output.exists()
+
+
+def _export_with_logs(system, output):
+    from loguru import logger
+
+    exporter = SiennaExporter.from_context(
+        PluginContext(config=SiennaConfig(output_path=str(output)), system=system)
+    )
+    exporter.should_export_time_series = False
+    logger.enable("r2x_sienna")
+    try:
+        assert exporter.on_export().is_ok()
+    finally:
+        logger.disable("r2x_sienna")
+    return {item["name"]: item for item in json.loads(output.read_text())["data"]["components"]}
+
+
+def test_export_fills_safe_defaults_for_psy_required_fields(tmp_path, caplog):
+    """Gaps with a principled value are filled so the component loads in PowerSystems.jl."""
+    from r2x_core import System as R2XSystem
+
+    from r2x_sienna.models import Line, MonitoredLine
+
+    bus_a = ACBus(name="a", number=1, base_voltage=230.0, angle=0.0, magnitude=1.0)
+    bus_b = ACBus(name="b", number=2, base_voltage=230.0, angle=0.0, magnitude=1.0)
+    arc = Arc(from_to=bus_a, to_from=bus_b)
+    load = PowerLoad(name="load", bus=bus_a, active_power=1.0)
+    transformer = Transformer2W(name="transformer", arc=arc, r=0.01, x=0.05, rating=1.0)
+    line = Line.example().model_copy(update={"name": "line", "arc": arc, "b": None})
+    monitored = MonitoredLine.example().model_copy(
+        update={"name": "monitored", "arc": arc, "flow_limits": None}
+    )
+    system = R2XSystem(name="incomplete", system_base=100.0)
+    system.add_components(bus_a, bus_b, arc, load, transformer, line, monitored)
+
+    exported = _export_with_logs(system, tmp_path / "system.json")
+
+    assert {k: exported["load"][k] for k in ("reactive_power", "max_reactive_power", "base_power")} == {
+        "reactive_power": 0.0,
+        "max_reactive_power": 0.0,
+        "base_power": 100.0,
+    }
+    assert exported["load"]["max_active_power"] == exported["load"]["active_power"]
+    assert exported["transformer"]["base_power"] == 100.0
+    assert exported["transformer"]["primary_shunt"] == {"real": 0.0, "imag": 0.0}
+    assert exported["line"]["b"] == {"from": 0.0, "to": 0.0}
+    assert exported["monitored"]["flow_limits"] == {"from_to": 100.0, "to_from": 100.0}
+    assert "PowerLoad 'load' (reactive_power=0.0" in caplog.text
+    assert "lack fields PowerSystems.jl requires" not in caplog.text
+
+
+def test_export_warns_for_psy_required_fields_without_safe_default(tmp_path, caplog):
+    """Fields with no correct default are written unset and reported."""
+    from r2x_core import System as R2XSystem
+
+    generator = ThermalStandard.example().model_copy(update={"name": "unplaced", "bus": None})
+    system = R2XSystem(name="incomplete", system_base=100.0)
+    system.add_component(generator)
+
+    exported = _export_with_logs(system, tmp_path / "system.json")
+
+    assert exported["unplaced"]["bus"] is None
+    assert "ThermalStandard 'unplaced' (bus)" in caplog.text
+
+
+def test_model_examples_serialize_all_psy_required_fields():
+    """Every example must produce a component PowerSystems.jl can construct."""
+    import inspect
+
+    from r2x_sienna import models
+    from r2x_sienna.serialization import PSY_REQUIRED_FIELDS, missing_psy_required_fields
+
+    checked = []
+    for name in PSY_REQUIRED_FIELDS:
+        cls = getattr(models, name, None)
+        if inspect.isclass(cls) and "example" in vars(cls):
+            assert missing_psy_required_fields(serialize_component_to_psy(cls.example())) == [], name
+            checked.append(name)
+    assert len(checked) >= 15
+
+
+def test_cost_serialization_includes_default_fields():
+    """PowerSystems.jl cost constructors require fields Python fills with defaults."""
+    from infrasys.cost_curves import CostCurve, FuelCurve, UnitSystem
+    from infrasys.value_curves import LinearCurve
+
+    from r2x_sienna.models import ThermalGenerationCost
+    from r2x_sienna.models.costs import RenewableGenerationCost
+
+    thermal = serialize_value(
+        ThermalGenerationCost(
+            variable=FuelCurve(value_curve=LinearCurve(10), power_units=UnitSystem.NATURAL_UNITS)
+        )
+    )
+    renewable = serialize_value(
+        RenewableGenerationCost(
+            variable=CostCurve(value_curve=LinearCurve(1.0), power_units=UnitSystem.NATURAL_UNITS)
+        )
+    )
+
+    assert {"fixed", "start_up", "shut_down", "variable"} <= thermal.keys()
+    assert thermal["variable"]["fuel_cost"] == 0.0
+    assert {"fixed", "variable"} <= renewable.keys()
+    assert "curtailment_cost" not in renewable
+
+
+@pytest.mark.parametrize(
+    ("component", "fields"),
+    [
+        ("line", ("g",)),
+        ("monitored_line", ("g",)),
+        (
+            "vsc",
+            (
+                "max_dc_current_from",
+                "max_dc_current_to",
+                "rating_from",
+                "rating_to",
+                "voltage_limits_from",
+                "voltage_limits_to",
+            ),
+        ),
+    ],
+)
+def test_export_omits_unset_fields_with_psy_defaults(component, fields):
+    """Unset fields that PowerSystems.jl declares non-nullable must use its constructor defaults."""
+    from r2x_sienna.models import Line, MonitoredLine, TwoTerminalVSCLine
+
+    model = {"line": Line, "monitored_line": MonitoredLine, "vsc": TwoTerminalVSCLine}[component].example()
+    for field in fields:
+        setattr(model, field, None)
+
+    serialized = serialize_component_to_psy(model)
+
+    assert all(field not in serialized for field in fields)
+
+
 @pytest.mark.parametrize(
     "transformer_type",
     [Transformer2W, TapTransformer, PhaseShiftingTransformer, Transformer3W, PhaseShiftingTransformer3W],
@@ -301,6 +465,106 @@ def test_exporter_copies_deterministic_data_to_hdf5(tmp_path: Path):
         )
     }
     assert uuids <= data_groups
+
+
+def test_export_logs_success_with_output_paths(simple_test_system, tmp_path, caplog):
+    """A successful export reports where the system JSON and time series were written."""
+    from loguru import logger
+
+    output = tmp_path / "system.json"
+    exporter = SiennaExporter.from_context(
+        PluginContext(config=SiennaConfig(output_path=str(output)), system=simple_test_system)
+    )
+    logger.enable("r2x_sienna")
+    try:
+        assert exporter.on_export().is_ok()
+    finally:
+        logger.disable("r2x_sienna")
+
+    assert f"System exported successfully to {output.resolve()}" in caplog.text
+    assert f"time series: {(tmp_path / 'system_time_series_storage.h5').resolve()}" in caplog.text
+
+
+def test_export_without_time_series_writes_system_internal(simple_test_system, tmp_path):
+    """PowerSystems.jl requires data.internal even when no time series storage is written."""
+    output = tmp_path / "system.json"
+    exporter = SiennaExporter.from_context(
+        PluginContext(config=SiennaConfig(output_path=str(output)), system=simple_test_system)
+    )
+    exporter.should_export_time_series = False
+    exporter.run()
+
+    data = json.loads(output.read_text())["data"]
+    assert set(data["internal"]) == {"uuid", "ext", "units_info"}
+    assert "time_series_storage_file" not in data
+
+
+def test_exporter_keeps_parsed_forecast_data(tmp_path: Path, data_folder: Path):
+    """Forecasts parsed from PSY must keep their data when exported."""
+    import shutil
+
+    source = data_folder / "2area-5bus-system"
+    work = tmp_path / "input"
+    shutil.copytree(source, work)
+    parser = SiennaParser.from_context(
+        PluginContext(
+            config=SiennaConfig(json_path=str(work / "test_system.json"), model_year=2020),
+            store=DataStore(path=work),
+        )
+    )
+    system = parser.run().system
+    load = next(iter(system.get_components(PowerLoad)))
+    expected = np.asarray(system.get_time_series(load, "max_active_power").data_array, dtype=float)
+
+    output = tmp_path / "export" / "system.json"
+    output.parent.mkdir()
+    SiennaExporter.from_context(
+        PluginContext(config=SiennaConfig(output_path=str(output)), system=system)
+    ).run()
+
+    h5_path = output.parent / "system_time_series_storage.h5"
+    with h5py.File(h5_path, "r") as h5_file:
+        data_groups = set(h5_file["time_series"])
+        metadata = bytes(h5_file["time_series_metadata"][:])
+    database = tmp_path / "metadata.db"
+    database.write_bytes(metadata)
+    import sqlite3
+
+    with sqlite3.connect(database) as connection:
+        associations = dict(
+            connection.execute("SELECT owner_uuid, time_series_uuid FROM time_series_associations").fetchall()
+        )
+    assert associations
+    assert set(associations.values()) <= data_groups
+    with h5py.File(h5_path, "r") as h5_file:
+        exported = np.asarray(h5_file["time_series"][associations[str(load.uuid)]]["data"][:])
+    np.testing.assert_allclose(exported, expected.reshape(-1))
+
+
+def test_exporter_rejects_overlapping_forecast_windows(tmp_path: Path):
+    """Overlapping windows cannot be flattened into a DeterministicSingleTimeSeries."""
+    system = System(name="overlapping-forecast")
+    reservoir = HydroReservoir.example()
+    system.add_component(reservoir)
+    system.add_time_series(
+        Deterministic.from_array(
+            data=np.zeros((3, 24)),
+            name="inflow",
+            resolution=timedelta(hours=1),
+            initial_timestamp=datetime(2023, 1, 1, tzinfo=UTC),
+            horizon=timedelta(hours=24),
+            interval=timedelta(hours=12),
+            window_count=3,
+        ),
+        reservoir,
+    )
+    manager = system._time_series_mgr
+    target_storage = manager.convert_storage(
+        in_place=False, time_series_storage_type=TimeSeriesStorageType.HDF5
+    )
+
+    with pytest.raises(RuntimeError, match="overlapping windows"):
+        SiennaExporter._copy_deterministic_time_series(manager, target_storage)
 
 
 @pytest.fixture

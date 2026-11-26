@@ -1,4 +1,5 @@
 from functools import singledispatch
+from math import isinf
 from typing import Any
 
 from infrasys.component import Component
@@ -9,13 +10,117 @@ from pint import Quantity
 from r2x_core import HasUnits
 
 from r2x_sienna.models import Arc, Complex, FromTo_ToFrom, InputOutput, MinMax, StartUpStages, UpDown
-from r2x_sienna.models.branch import ThreeWindingTransformer, TwoWindingTransformer
-from r2x_sienna.models.costs import OperationalCost, StorageCost
+from r2x_sienna.models.branch import (
+    Line,
+    MonitoredLine,
+    ThreeWindingTransformer,
+    TwoTerminalVSCLine,
+    TwoWindingTransformer,
+)
+from r2x_sienna.models.costs import OperationalCost
 from r2x_sienna.parser import PARAMETRIZED_TYPES
 
 PARAMETRIZED_OUTPUT_TYPES = {"value_curve", "function_data", "loss"}
 OUTPUT_METADATA = {"__metadata__", "internal"}
 PARAMETRIZED_FIELDS = {"direction"}
+# Fields that PowerSystems.jl declares non-nullable but fills from constructor defaults when omitted.
+PSY_DEFAULTED_FIELDS: dict[type, tuple[str, ...]] = {
+    Line: ("g",),
+    MonitoredLine: ("g",),
+    ThreeWindingTransformer: ("rating_primary", "rating_secondary", "rating_tertiary"),
+    TwoTerminalVSCLine: (
+        "max_dc_current_from",
+        "max_dc_current_to",
+        "rating_from",
+        "rating_to",
+        "voltage_limits_from",
+        "voltage_limits_to",
+    ),
+}
+# JSON cannot represent infinity; PowerSystems.jl uses these finite sentinels instead.
+PSY_INFINITE_VALUES = {
+    "time_at_status": 1e4,  # INFINITE_TIME
+    "energy_import_weekly_limit": 1e6,  # INFINITE_BOUND
+    "energy_export_weekly_limit": 1e6,  # INFINITE_BOUND
+}
+
+
+def _psy_finite_value(field: str, value: Any) -> Any:
+    if isinstance(value, float) and isinf(value) and value > 0 and field in PSY_INFINITE_VALUES:
+        return PSY_INFINITE_VALUES[field]
+    return value
+
+
+# Fields PowerSystems.jl 5.12 requires as non-null with no constructor default, but that Python allows unset.
+PSY_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
+    "AreaInterchange": ("from_area", "to_area"),
+    "DiscreteControlledACBranch": ("r", "x", "rating"),
+    "EnergyReservoirStorage": ("bus",),
+    "HydroDispatch": ("bus",),
+    "HydroPumpTurbine": ("bus",),
+    "HydroTurbine": ("bus",),
+    "InterruptiblePowerLoad": (
+        "active_power",
+        "reactive_power",
+        "max_active_power",
+        "max_reactive_power",
+        "base_power",
+        "operation_cost",
+    ),
+    "InterruptibleStandardLoad": ("operation_cost",),
+    "Line": ("r", "x", "b", "rating"),
+    "MonitoredLine": ("r", "x", "b", "flow_limits", "rating", "angle_limits"),
+    "PhaseShiftingTransformer": ("r", "x", "primary_shunt", "base_power"),
+    "PowerLoad": ("active_power", "reactive_power", "base_power", "max_active_power", "max_reactive_power"),
+    "RenewableDispatch": ("bus",),
+    "RenewableNonDispatch": ("bus",),
+    "ShiftablePowerLoad": ("operation_cost",),
+    "Source": ("bus",),
+    "SynchronousCondenser": ("bus",),
+    "TapTransformer": ("r", "x", "primary_shunt", "base_power"),
+    "ThermalMultiStart": ("bus",),
+    "ThermalStandard": ("bus",),
+    "Transformer2W": ("r", "x", "primary_shunt", "base_power"),
+    "TwoTerminalLCCLine": ("r",),
+    "TwoTerminalVSCLine": ("rating",),
+    "VariableReserve": ("requirement",),
+}
+
+
+def missing_psy_required_fields(data: dict[str, Any]) -> list[str]:
+    """Return PowerSystems.jl-required fields that a serialized component leaves unset."""
+    component_type = data.get("__metadata__", {}).get("type", "")
+    return [field for field in PSY_REQUIRED_FIELDS.get(component_type, ()) if data.get(field) is None]
+
+
+def fill_psy_safe_defaults(data: dict[str, Any], system_base_power: float) -> list[str]:
+    """Fill unset PowerSystems.jl-required fields that have a principled value.
+
+    Values mean "nothing there" (no shunt, no reactive demand), reuse the component's own data,
+    or use the exported system base, matching the transformer upgrade defaults. Fields without a
+    correct default, such as ``bus``, ``r``, ``x``, or ``rating``, are left for the caller to report.
+    """
+    component_type = data.get("__metadata__", {}).get("type", "")
+    filled: list[str] = []
+
+    def fill(field: str, value: Any) -> None:
+        if data.get(field) is None and value is not None:
+            data[field] = value
+            filled.append(f"{field}={value}")
+
+    if component_type in ("Transformer2W", "TapTransformer", "PhaseShiftingTransformer"):
+        fill("base_power", system_base_power)
+        fill("primary_shunt", {"real": 0.0, "imag": 0.0})
+    if component_type in ("Line", "MonitoredLine"):
+        fill("b", {"from": 0.0, "to": 0.0})
+    if component_type == "MonitoredLine" and data.get("rating") is not None:
+        fill("flow_limits", {"from_to": data["rating"], "to_from": data["rating"]})
+    if component_type in ("PowerLoad", "InterruptiblePowerLoad"):
+        fill("reactive_power", 0.0)
+        fill("max_active_power", data.get("active_power"))
+        fill("max_reactive_power", data.get("reactive_power"))
+        fill("base_power", system_base_power)
+    return filled
 
 
 @singledispatch
@@ -87,17 +192,11 @@ def _serialize_parametric_object(obj: InfraSysBaseModel) -> dict[str, Any]:
     output_dict: dict[str, Any] = {}
     parametric_types: set[str] = set()
 
-    for key in obj.model_fields_set:
+    # Emit defaulted fields too: PowerSystems.jl cost constructors require them. Every nullable
+    # PowerSystems.jl cost or curve field defaults to nothing, so None values are omitted.
+    for key in type(obj).model_fields:
         attribute = getattr(obj, key)
-        if (
-            isinstance(obj, StorageCost)
-            and key
-            in {
-                "charge_variable_cost",
-                "discharge_variable_cost",
-            }
-            and attribute is None
-        ):
+        if attribute is None:
             continue
         if isinstance(attribute, StartUpStages):
             output_dict[key] = serialize_value(attribute, key)
@@ -122,7 +221,7 @@ def _serialize_parametric_object(obj: InfraSysBaseModel) -> dict[str, Any]:
             output_dict[key] = serialized_list
         else:
             serialized = serialize_value(attribute, key)
-            output_dict[key] = serialized if serialized is not None else attribute
+            output_dict[key] = _psy_finite_value(key, serialized if serialized is not None else attribute)
 
     metadata: dict[str, Any] = {
         "module": "InfrastructureSystems" if not isinstance(obj, OperationalCost) else "PowerSystems",
@@ -204,17 +303,19 @@ def serialize_component_to_psy(
                 data[output_field] = value["value"]
     data = _add_psy_metadata(component, data)
     data.update(custom_values)
+    for field in PSY_INFINITE_VALUES.keys() & data.keys():
+        data[field] = _psy_finite_value(field, data[field])
 
     if isinstance(component, TwoWindingTransformer | ThreeWindingTransformer):
         # PowerSystems.jl derives omitted bases from connected buses; 0 kV would yield NaN impedances.
         for field in ("base_voltage_primary", "base_voltage_secondary", "base_voltage_tertiary"):
             if field in data and not data[field]:
                 del data[field]
-    if isinstance(component, ThreeWindingTransformer):
-        # PowerSystems.jl requires Float64 winding ratings and defaults omitted ones to 0.0.
-        for field in ("rating_primary", "rating_secondary", "rating_tertiary"):
-            if field in data and data[field] is None:
-                del data[field]
+    for component_type, fields in PSY_DEFAULTED_FIELDS.items():
+        if isinstance(component, component_type):
+            for field in fields:
+                if field in data and data[field] is None:
+                    del data[field]
 
     if not include:
         include = {}

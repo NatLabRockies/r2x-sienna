@@ -100,8 +100,11 @@ def test_synchronous_condenser_zero_base_rejects_nonzero_limits(limits):
 
 def test_service_and_topology_examples():
     """Test service and topology example constructors."""
+    from r2x_sienna.models.branch import TModelHVDCLine
     from r2x_sienna.models.services import Reserve, TransmissionInterface
     from r2x_sienna.models.topology import DCBus
+
+    assert TModelHVDCLine.example().rating_down <= 0
 
     reserve = Reserve.example()
     interface = TransmissionInterface.example()
