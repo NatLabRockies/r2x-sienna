@@ -42,13 +42,44 @@ def _get_ref_uuid(ref: Any) -> str | None:
     return ref.get("__metadata__", {}).get("uuid")
 
 
-def _build_bus_voltage_map(components: list[dict[str, Any]]) -> dict[str, float]:
+def _build_bus_voltage_map(components: list[dict[str, Any]]) -> dict[str, float | None]:
     """Return {uuid: base_voltage} for every ACBus in *components*."""
     return {
-        comp["internal"]["uuid"]["value"]: comp.get("base_voltage", 0.0)
+        comp["internal"]["uuid"]["value"]: comp.get("base_voltage")
         for comp in components
         if comp.get("__metadata__", {}).get("type") == "ACBus" and "internal" in comp
     }
+
+
+def _resolve_bus_voltage(bus_uuid: str | None, bus_voltage_map: dict[str, float | None]) -> float | None:
+    """Return a usable positive bus voltage, or None when it is unknown or zero."""
+    voltage = bus_voltage_map.get(bus_uuid or "")
+    return voltage if isinstance(voltage, int | float) and voltage > 0 else None
+
+
+def _fill_base_voltages(
+    comp: dict[str, Any], voltages: dict[str, float | None], comp_name: str, comp_type: str
+) -> None:
+    """Replace missing or zero base voltages with connected-bus voltages.
+
+    A 0.0 kV base makes PowerSystems.jl natural-unit impedances NaN. Unresolved values are left
+    unset so PowerSystems.jl applies its own bus-voltage default.
+    """
+    for field, voltage in voltages.items():
+        if comp.get(field):
+            continue
+        if voltage is None:
+            comp.pop(field, None)
+            continue
+        logger.warning(
+            "Component {} ({}) has no {} defined. Assuming {} = {}.",
+            comp_name,
+            comp_type,
+            field,
+            field,
+            voltage,
+        )
+        comp[field] = voltage
 
 
 def _build_arc_to_bus_map(
@@ -70,7 +101,7 @@ def _build_arc_to_bus_map(
 
 def _patch_two_winding_transformer(
     comp: dict[str, Any],
-    bus_voltage_map: dict[str, float],
+    bus_voltage_map: dict[str, float | None],
     arc_to_bus_map: dict[str, tuple[str | None, str | None]],
     system_base_power: float,
 ) -> None:
@@ -83,13 +114,16 @@ def _patch_two_winding_transformer(
         comp["primary_shunt"] = {"real": comp["primary_shunt"], "imag": 0.0}
 
     # Resolve primary/secondary voltages from the connected buses via the Arc object
-    primary_voltage = 0.0
-    secondary_voltage = 0.0
-    arc_uuid = _get_ref_uuid(comp.get("arc", {}))
-    if arc_uuid:
-        from_uuid, to_uuid = arc_to_bus_map.get(arc_uuid, (None, None))
-        primary_voltage = bus_voltage_map.get(from_uuid or "", 0.0)
-        secondary_voltage = bus_voltage_map.get(to_uuid or "", 0.0)
+    from_uuid, to_uuid = arc_to_bus_map.get(_get_ref_uuid(comp.get("arc", {})) or "", (None, None))
+    _fill_base_voltages(
+        comp,
+        {
+            "base_voltage_primary": _resolve_bus_voltage(from_uuid, bus_voltage_map),
+            "base_voltage_secondary": _resolve_bus_voltage(to_uuid, bus_voltage_map),
+        },
+        comp_name,
+        comp_type,
+    )
 
     # Set rating_b and rating_c to rating if they are missing
     rating = comp.get("rating") or 0.0
@@ -97,8 +131,6 @@ def _patch_two_winding_transformer(
         "rating_b": rating,
         "rating_c": rating,
         "base_power": system_base_power,
-        "base_voltage_primary": primary_voltage,
-        "base_voltage_secondary": secondary_voltage,
     }
     for field, default in defaults.items():
         if not comp.get(field):
@@ -115,7 +147,7 @@ def _patch_two_winding_transformer(
 
 def _patch_three_winding_transformer(
     comp: dict[str, Any],
-    bus_voltage_map: dict[str, float],
+    bus_voltage_map: dict[str, float | None],
     arc_to_bus_map: dict[str, tuple[str | None, str | None]],
     system_base_power: float,
 ) -> None:
@@ -145,20 +177,26 @@ def _patch_three_winding_transformer(
                 max_val,
             )
 
-    def _voltage_from_arc(arc_key: str) -> float:
+    def _voltage_from_arc(arc_key: str) -> float | None:
         arc_uuid = _get_ref_uuid(comp.get(arc_key, {}))
-        if arc_uuid:
-            from_uuid, _ = arc_to_bus_map.get(arc_uuid, (None, None))
-            return bus_voltage_map.get(from_uuid or "", 0.0)
-        return 0.0
+        from_uuid, _ = arc_to_bus_map.get(arc_uuid or "", (None, None))
+        return _resolve_bus_voltage(from_uuid, bus_voltage_map)
+
+    _fill_base_voltages(
+        comp,
+        {
+            "base_voltage_primary": _voltage_from_arc("primary_star_arc"),
+            "base_voltage_secondary": _voltage_from_arc("secondary_star_arc"),
+            "base_voltage_tertiary": _voltage_from_arc("tertiary_star_arc"),
+        },
+        comp_name,
+        comp_type,
+    )
 
     defaults: dict[str, Any] = {
         "base_power_12": system_base_power,
         "base_power_23": system_base_power,
         "base_power_13": system_base_power,
-        "base_voltage_primary": _voltage_from_arc("primary_star_arc"),
-        "base_voltage_secondary": _voltage_from_arc("secondary_star_arc"),
-        "base_voltage_tertiary": _voltage_from_arc("tertiary_star_arc"),
     }
     for field, default in defaults.items():
         if comp.get(field) is None:
@@ -480,9 +518,10 @@ def upgrade_ac_bus(system_data: dict[str, Any]) -> dict[str, Any]:
             new_components.append(comp)
             continue
 
-        if comp["angle"] >= 1.571 or comp["angle"] <= -1.571:
+        angle = comp.get("angle")
+        if isinstance(angle, int | float) and not -1.571 < angle < 1.571:
             logger.warning(
-                f"Bus {comp['name']} has an angle of {comp['angle']}, which is outside the valid range [-1.571, 1.571]. Setting angle to 0.0.",
+                f"Bus {comp['name']} has an angle of {angle}, which is outside the valid range [-1.571, 1.571]. Setting angle to 0.0.",
             )
             comp["angle"] = 0.0
 
@@ -557,7 +596,7 @@ def upgrade_monitored_line(system_data: dict[str, Any]) -> dict[str, Any]:
 
 def _prepare_transformer_context(
     system_data: dict[str, Any],
-) -> tuple[dict[str, float], dict[str, tuple[str | None, str | None]], float]:
+) -> tuple[dict[str, float | None], dict[str, tuple[str | None, str | None]], float]:
     """Build shared lookup maps and system base power for transformer upgrade steps."""
     components = system_data["data"]["components"]
     bus_voltage_map = _build_bus_voltage_map(components)

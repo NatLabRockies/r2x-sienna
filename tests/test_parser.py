@@ -16,7 +16,7 @@ from infrasys import Deterministic, SingleTimeSeries
 from infrasys.exceptions import ISNotStored
 from r2x_core import DataStore, PluginContext, System
 
-from r2x_sienna.models import HydroReservoir, Source
+from r2x_sienna.models import HydroReservoir, PowerLoad, Source
 from r2x_sienna.parser import SiennaParser
 from r2x_sienna.plugin_config import SiennaConfig
 
@@ -250,6 +250,73 @@ def test_parser_derives_inflow_timestamp_from_existing_series(mock_data_store: M
 
     inflow = system.get_time_series(reservoir, "inflow")
     assert inflow.initial_timestamp == existing_series.initial_timestamp
+
+
+def test_parser_derives_hydro_budget_timestamp_or_requires_one(mock_data_store: Mock):
+    """Run-of-river budgets reuse an existing timestamp and fail clearly without one."""
+    from r2x_sienna.models import HydroDispatch
+
+    parser = SiennaParser.from_context(
+        PluginContext(config=SiennaConfig(model_year=None, system_name="test_case"), store=mock_data_store)
+    )
+    system = System(name="hydro-test", auto_add_composed_components=True)
+    hydro = HydroDispatch.example()
+    system.add_component(hydro)
+    parser.ctx.system = system
+
+    with pytest.raises(ValueError, match="hydro_budget series without a timestamp"):
+        parser._ensure_hydro_dispatch_budget_time_series()
+
+    timestamp = datetime(year=2023, month=1, day=1, tzinfo=UTC)
+    system.add_time_series(
+        SingleTimeSeries.from_array(
+            data=[1.0] * 24,
+            name="max_active_power",
+            resolution=timedelta(hours=1),
+            initial_timestamp=timestamp,
+        ),
+        hydro,
+    )
+
+    parser._ensure_hydro_dispatch_budget_time_series()
+
+    assert system.get_time_series(hydro, "hydro_budget").initial_timestamp == timestamp
+
+
+def test_parser_builds_without_missing_time_series_file(data_folder: Path, tmp_path: Path, caplog):
+    """A missing HDF5 companion is reported, and components still parse."""
+    from loguru import logger
+
+    case_path = tmp_path / "case"
+    shutil.copytree(data_folder / "2area-5bus-system", case_path)
+    (case_path / "test_system_time_series_storage.h5").unlink()
+    parser = SiennaParser.from_context(
+        PluginContext(
+            config=SiennaConfig(model_year=2029, json_path=str(case_path / "test_system.json")),
+            store=DataStore(path=case_path),
+        )
+    )
+
+    logger.enable("r2x_sienna")
+    try:
+        system = parser.run().system
+    finally:
+        logger.disable("r2x_sienna")
+
+    assert "Time series file not found" in caplog.text
+    assert sum(1 for _ in system._component_mgr.iter_all()) == 53
+    assert not system.has_time_series(next(iter(system.get_components(PowerLoad))))
+
+
+def test_parser_build_requires_json_path(mock_data_store: Mock):
+    parser = SiennaParser.from_context(
+        PluginContext(config=SiennaConfig(model_year=2029), store=mock_data_store)
+    )
+
+    result = parser.on_build()
+
+    assert result.is_err()
+    assert "json_path must be specified" in str(result.err())
 
 
 def test_parser_keeps_reservoir_inflow_source_only_when_system_has_forecasts(

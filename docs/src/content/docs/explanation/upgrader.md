@@ -24,10 +24,9 @@ When `SiennaParser` is run with a disk-backed `json_path`, the flow is:
   embedded metadata when the file exists and the legacy layout is detected.
 8. Continue with parser deserialization.
 
-The parser calls this flow from `SiennaParser.on_upgrade()`. Automatic upgrades
-are therefore file-backed: provide `json_path` in `SiennaConfig`. A stdin
-payload has no source file to rewrite and should be upgraded separately before
-it is passed to a parser context when compatibility transformations are needed.
+The parser calls this flow from `SiennaParser.on_upgrade()`. Parsing is
+file-backed: provide `json_path` in `SiennaConfig`, and keep the HDF5 time series
+companion next to it.
 
 ## Step Registration And Ordering
 
@@ -57,10 +56,13 @@ The registered system steps currently handle these compatibility cases:
   created where required by time-series ownership.
 - **Hydro prime movers:** fills missing `prime_mover_type` values for hydro
   turbine and pump-turbine components.
-- **Bus validation:** resets out-of-range AC bus angles to a valid default.
+- **Bus validation:** resets out-of-range AC bus angles to a valid default and
+  preserves absent (`null`) angles, which PowerSystems.jl permits.
 - **Transformer fields:** repairs two-winding, tap, phase-shifting, three-
   winding, and phase-shifting three-winding transformer fields using connected
-  bus voltages, arc relationships, and system base power.
+  bus voltages, arc relationships, and system base power. Missing or `0.0` kV
+  base voltages are replaced with connected-bus voltages, or left unset when no
+  bus voltage is available.
 - **AC branch limits:** fills missing `rating_b` and `rating_c` values for
   `Line` and `MonitoredLine` components.
 - **HVDC naming:** renames legacy `TwoTerminalHVDCLine` metadata to

@@ -79,6 +79,11 @@ class MonitoredLine(ACBranch):
         return MonitoredLine(
             name="ExampleMonitoredLine",
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
+            r=0.01,
+            x=0.05,
+            b=FromTo_ToFrom(from_to=0.0, to_from=0.0),
+            flow_limits=FromTo_ToFrom(from_to=100.0, to_from=100.0),
+            angle_limits=MinMax(min=-0.03, max=0.03),
             rating=100,
             rating_b=120,
             rating_c=120,
@@ -116,6 +121,7 @@ class Line(ACBranch):
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
             r=0.01,
             x=0.05,
+            b=FromTo_ToFrom(from_to=0.0, to_from=0.0),
             rating=100,
             rating_b=120,
             rating_c=150,
@@ -175,10 +181,12 @@ class TwoWindingTransformer(ACBranch):
     base_power: (
         Annotated[float | None, Field(ge=0, description="Thermal rating of the transformer.")] | None
     ) = None
-    base_voltage_primary: Annotated[float | None, Field(ge=0, description="Primary base voltage in kV")] = 0.0
+    base_voltage_primary: Annotated[float | None, Field(ge=0, description="Primary base voltage in kV")] = (
+        None
+    )
     base_voltage_secondary: Annotated[
         float | None, Field(ge=0, description="Secondary base voltage in kV")
-    ] = 0.0
+    ] = None
     rating_b: Annotated[float, Field(description="Second thermal rating of the transformer.")] | None = None
     rating_c: Annotated[float, Field(description="Third thermal rating of the transformer.")] | None = None
 
@@ -284,12 +292,14 @@ class ThreeWindingTransformer(Branch):
         float, Field(gt=0, description="Base power (MVA) for secondary-tertiary windings")
     ]
     base_power_13: Annotated[float, Field(gt=0, description="Base power (MVA) for primary-tertiary windings")]
-    base_voltage_primary: Annotated[float | None, Field(ge=0, description="Primary base voltage in kV")] = 0.0
+    base_voltage_primary: Annotated[float | None, Field(ge=0, description="Primary base voltage in kV")] = (
+        None
+    )
     base_voltage_secondary: Annotated[
         float | None, Field(ge=0, description="Secondary base voltage in kV")
-    ] = 0.0
+    ] = None
     base_voltage_tertiary: Annotated[float | None, Field(ge=0, description="Tertiary base voltage in kV")] = (
-        0.0
+        None
     )
     g: Annotated[
         float, Field(description="Shunt conductance in pu from star bus to ground (MAG1 in PSS/E)")
@@ -468,6 +478,9 @@ class Transformer2W(TwoWindingTransformer):
     def example(cls) -> "Transformer2W":
         return Transformer2W(
             name="Example2WTransformer",
+            r=0.01,
+            x=0.05,
+            base_power=100.0,
             rating=100,
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
             active_power_flow=100,
@@ -504,6 +517,9 @@ class TapTransformer(TwoWindingTransformer):
     def example(cls) -> "TapTransformer":
         return TapTransformer(
             name="ExampleTapTransformer",
+            r=0.01,
+            x=0.05,
+            base_power=100.0,
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
             rating=100,
             active_power_flow=50.0,
@@ -548,6 +564,9 @@ class PhaseShiftingTransformer(TwoWindingTransformer):
     def example(cls) -> "PhaseShiftingTransformer":
         return PhaseShiftingTransformer(
             name="ExamplePhaseShiftingTransformer",
+            r=0.01,
+            x=0.05,
+            base_power=100.0,
             arc=Arc(from_to=ACBus.example(), to_from=ACBus.example()),
             rating=100,
             active_power_flow=50.0,
@@ -607,7 +626,7 @@ class TModelHVDCLine(DCBranch):
             name="ExampleDCLine",
             arc=Arc(from_to=DCBus.example(), to_from=DCBus.example()),
             rating_up=100,
-            rating_down=80,
+            rating_down=-80,
         )
 
 

@@ -1,4 +1,5 @@
 import json
+import math
 import time
 from collections.abc import Iterable
 from pathlib import Path
@@ -13,7 +14,11 @@ from r2x_core import Plugin
 from rust_ok import Err, Ok, Result
 
 from r2x_sienna.models import HydroReservoir
-from r2x_sienna.serialization import serialize_component_to_psy
+from r2x_sienna.serialization import (
+    fill_psy_safe_defaults,
+    missing_psy_required_fields,
+    serialize_component_to_psy,
+)
 
 from .plugin_config import SiennaExporterConfig
 
@@ -200,6 +205,23 @@ def serialize_supplemental_attributes(system: Any) -> dict[str, Any]:
     return {"attributes": serialized_items, "associations": associations}
 
 
+def find_non_finite_values(value: Any, path: str = "") -> list[str]:
+    """Return paths of NaN or infinite floats, which JSON encoders silently write as null."""
+    if isinstance(value, float):
+        return [] if math.isfinite(value) else [f"{path}={value}"]
+    if isinstance(value, dict):
+        label = f"{path}[{value['name']!r}]" if path.endswith("components") and "name" in value else path
+        return [
+            found
+            for key, item in value.items()
+            for found in find_non_finite_values(item, f"{label}.{key}" if label else str(key))
+        ]
+    if isinstance(value, list):
+        prefix = path if path.endswith("components") else f"{path}[]"
+        return [found for item in value for found in find_non_finite_values(item, prefix)]
+    return []
+
+
 def default_system_information() -> dict[str, Any]:
     """Return default system information structure."""
     return {
@@ -295,6 +317,32 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
                 time.perf_counter() - t_serialize,
                 skipped,
             )
+            system_base_power = self.output_json.get("units_settings", {}).get(
+                "base_value", self.config.system_base_power
+            )
+            assumed = [
+                f"{item['__metadata__']['type']} '{item.get('name', '<unnamed>')}' ({', '.join(filled)})"
+                for item in components
+                if (filled := fill_psy_safe_defaults(item, system_base_power))
+            ]
+            if assumed:
+                logger.warning(
+                    "Assumed defaults for {} component(s) missing fields PowerSystems.jl requires: {}",
+                    len(assumed),
+                    "; ".join(assumed[:20]) + ("; ..." if len(assumed) > 20 else ""),
+                )
+            incomplete = [
+                f"{item['__metadata__']['type']} '{item.get('name', '<unnamed>')}' ({', '.join(fields)})"
+                for item in components
+                if (fields := missing_psy_required_fields(item))
+            ]
+            if incomplete:
+                logger.warning(
+                    "{} component(s) lack fields PowerSystems.jl requires and have no safe default; "
+                    "the file will not load in Julia until they are provided: {}",
+                    len(incomplete),
+                    "; ".join(incomplete[:20]) + ("; ..." if len(incomplete) > 20 else ""),
+                )
 
             self.output_json["data"]["components"] = components
 
@@ -307,6 +355,14 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
 
             self.output_json["data"]["subsystems"] = {}
             self.output_json["data"]["masked_components"] = {}
+            self.output_json["data"].setdefault(
+                "internal", {"uuid": {"value": str(uuid4())}, "ext": {}, "units_info": None}
+            )
+
+            non_finite = find_non_finite_values(self.output_json)
+            if non_finite:
+                shown = ", ".join(non_finite[:10])
+                raise ValueError(f"Cannot export {len(non_finite)} non-finite value(s) to PSY JSON: {shown}")
 
             logger.debug("Writing JSON output to {}", self.output_path)
             t_write = time.perf_counter()
@@ -319,7 +375,16 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
             if self.should_export_time_series:
                 self._export_time_series()
 
-            logger.info("Export complete in {:.2f}s", time.perf_counter() - t0)
+            time_series_file = self.output_json["data"].get("time_series_storage_file")
+            logger.success(
+                "System exported successfully to {} in {:.2f}s ({} components{})",
+                self.output_path.resolve(),
+                time.perf_counter() - t0,
+                len(components),
+                f"; time series: {(self.output_path.parent / time_series_file).resolve()}"
+                if time_series_file
+                else "",
+            )
             return Ok(None)
         except Exception as e:  # noqa: BLE001
             logger.error("Failed to export system: {}", e)
@@ -370,11 +435,6 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
                 "InfrastructureSystems.Hdf5TimeSeriesStorage"
             )
             self.output_json["data"]["time_series_storage_file"] = storage_file_path
-            self.output_json["data"]["internal"] = {
-                "uuid": {"value": str(uuid4())},
-                "ext": {},
-                "units_info": None,
-            }
 
             dumped_data = orjson.dumps(self.output_json)
             with open(self.output_path, "wb") as f:
@@ -393,10 +453,24 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
 
     @staticmethod
     def _copy_deterministic_time_series(time_series_manager: Any, target_storage: Any) -> None:
-        """Copy deterministic arrays omitted by Infrasys storage conversion."""
+        """Copy forecast arrays omitted by Infrasys storage conversion.
+
+        Parsed PSY forecasts are relabelled ``DeterministicSingleTimeSeries`` even when their data is
+        a windowed forecast with no backing static series, so both labels are copied when missing.
+        """
         metadata_store = time_series_manager._metadata_store
         source_storage = time_series_manager._storage
-        for time_series_uuid in metadata_store.unique_uuids_by_type("Deterministic"):
+        uuids = dict.fromkeys(
+            [
+                *metadata_store.unique_uuids_by_type("Deterministic"),
+                *metadata_store.unique_uuids_by_type("DeterministicSingleTimeSeries"),
+            ]
+        )
+        with target_storage.open_time_series_store() as target_file:
+            stored = set(target_file[target_storage.HDF5_TS_ROOT_PATH])
+        for time_series_uuid in uuids:
+            if str(time_series_uuid) in stored:
+                continue
             metadata = metadata_store.list_metadata_with_time_series_uuid(time_series_uuid, limit=1)
             if len(metadata) != 1:
                 raise RuntimeError(
@@ -404,6 +478,13 @@ class SiennaExporter(Plugin[SiennaExporterConfig]):
                     f"got {len(metadata)}"
                 )
             metadata_item = metadata[0]
+            # The HDF5 export flattens forecasts into the static series backing a
+            # DeterministicSingleTimeSeries, which only preserves non-overlapping windows.
+            if metadata_item.window_count > 1 and metadata_item.interval != metadata_item.horizon:
+                raise RuntimeError(
+                    f"Cannot export forecast '{metadata_item.name}' ({time_series_uuid}) with overlapping "
+                    f"windows (horizon={metadata_item.horizon}, interval={metadata_item.interval})"
+                )
             source_time_series = source_storage.get_time_series(metadata_item)
             target_storage.add_time_series(
                 metadata_item,

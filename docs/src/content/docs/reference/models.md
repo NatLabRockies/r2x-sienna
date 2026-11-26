@@ -145,6 +145,40 @@ overlapping component names.
   `Line` and `MonitoredLine` active/reactive flow fields accept signed values.
 - Line requirements:
   `Line` enforces required electrical fields (`r`, `x`, `rating`) for PSY-style construction.
+- Transformer voltage bases:
+  missing winding base voltages default to `None`. PSY exports omit missing or `0.0` kV bases so
+  PowerSystems.jl derives them from the connected buses; the upgrader also replaces legacy `0.0`
+  bases with connected-bus voltages when parsing.
+- Three-winding transformer ratings:
+  unset `rating_primary`, `rating_secondary`, and `rating_tertiary` values are omitted from PSY
+  exports so PowerSystems.jl applies its required `0.0` default instead of rejecting `null`.
+  The same applies to unset `Line.g`, `MonitoredLine.g`, and `TwoTerminalVSCLine` converter
+  limits (`max_dc_current_*`, `rating_from/to`, `voltage_limits_from/to`).
+- Cost serialization:
+  cost and curve fields left at their Python defaults (for example `fixed`, `start_up`,
+  `shut_down`, `fuel_cost`) are written, because PowerSystems.jl constructors require them.
+- Infinite values:
+  JSON cannot store infinity, so `time_at_status = inf` is exported as PowerSystems.jl's
+  `INFINITE_TIME` (`1e4`) and infinite `ImportExportCost` weekly limits as `INFINITE_BOUND`
+  (`1e6`). Any other NaN or infinite value fails the export with the offending field paths.
+- Incomplete components:
+  PowerSystems.jl rejects a file when a component leaves a required field unset. The exporter
+  closes these gaps in two ways, logging a warning for each component it changes:
+  - Fields with a principled default are filled so the file loads: transformer `base_power`
+    (the exported system base, as the upgrader does) and `primary_shunt` (no shunt), line `b`
+    (no shunt susceptance), `MonitoredLine.flow_limits` (the line `rating` in both directions),
+    and `PowerLoad`/`InterruptiblePowerLoad` `reactive_power` (`0.0`), `max_active_power` and
+    `max_reactive_power` (the load's own active and reactive power), and `base_power` (the
+    exported system base).
+  - Fields with no correct default are left unset and listed in a warning: a generator, storage,
+    or source `bus`; branch `r`, `x`, and `rating`; `VariableReserve.requirement`;
+    `AreaInterchange` areas; and load `operation_cost`. Any invented value here would load but
+    describe a different system (for example, `r = x = 0` is a short circuit), so these must come
+    from the source model or translation before the file can be used in Julia.
+- Defaults aligned with PowerSystems.jl 5.12:
+  `deployed_fraction` defaults to `0.0` on non-spinning reserves,
+  `VariableReserveNonSpinning.sustained_time` to `14400.0`, and
+  `FACTSControlDevice.reactive_power_required` to `0.0`.
 - Static injection linkage:
   static-injection models support optional `dynamic_injector` linkage to dynamic models.
 - Load conformity naming:

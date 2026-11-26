@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from infrasys.cost_curves import FuelCurve, UnitSystem
 from infrasys.value_curves import LinearCurve
 from r2x_core import UpgradeStep, UpgradeType
@@ -436,6 +437,75 @@ def test_upgrade_step_helpers_for_transformers() -> None:
     assert three_w["base_voltage_tertiary"] == 230.0
 
 
+def test_transformer_upgrades_replace_zero_base_voltages_with_bus_voltages() -> None:
+    """Legacy 0.0 kV bases produce NaN natural-unit impedances in PowerSystems.jl."""
+    bus_map = {"bus_1": 230.0, "bus_2": 115.0}
+    arc_map = {"a": ("bus_1", "bus_2"), "b": ("bus_2", "bus_1")}
+    two_w = {"arc": {"value": "a"}, "base_voltage_primary": 0.0, "base_voltage_secondary": 0.0}
+    three_w = {
+        "primary_star_arc": {"value": "a"},
+        "secondary_star_arc": {"value": "b"},
+        "tertiary_star_arc": {"value": "a"},
+        "base_power_12": 100.0,
+        "base_power_23": 100.0,
+        "base_power_13": 100.0,
+        "base_voltage_primary": 0.0,
+        "base_voltage_secondary": 0.0,
+        "base_voltage_tertiary": 0.0,
+    }
+
+    upgrade_steps._patch_two_winding_transformer(two_w, bus_map, arc_map, 100.0)
+    upgrade_steps._patch_three_winding_transformer(three_w, bus_map, arc_map, 100.0)
+
+    assert (two_w["base_voltage_primary"], two_w["base_voltage_secondary"]) == (230.0, 115.0)
+    assert three_w["base_voltage_primary"] == 230.0
+    assert three_w["base_voltage_secondary"] == 115.0
+    assert three_w["base_voltage_tertiary"] == 230.0
+
+
+def test_transformer_upgrades_keep_unresolved_base_voltages_unset() -> None:
+    """Unresolvable bases stay None so PowerSystems.jl derives them instead of using 0.0 kV."""
+    two_w = {"arc": {"value": "unknown"}, "base_voltage_primary": None}
+    three_w = {
+        "primary_star_arc": {"value": "unknown"},
+        "base_power_12": 100.0,
+        "base_power_23": 100.0,
+        "base_power_13": 100.0,
+    }
+
+    upgrade_steps._patch_two_winding_transformer(two_w, {}, {}, 100.0)
+    upgrade_steps._patch_three_winding_transformer(three_w, {}, {}, 100.0)
+
+    for comp, fields in (
+        (two_w, ("base_voltage_primary", "base_voltage_secondary")),
+        (three_w, ("base_voltage_primary", "base_voltage_secondary", "base_voltage_tertiary")),
+    ):
+        assert all(comp.get(field) is None for field in fields)
+
+
+def test_upgrade_ac_bus_accepts_missing_angles() -> None:
+    """PowerSystems.jl allows a null bus angle, so the upgrader must not compare it numerically."""
+    buses = [
+        {"__metadata__": {"type": "ACBus"}, "name": "null", "angle": None},
+        {"__metadata__": {"type": "ACBus"}, "name": "missing"},
+        {"__metadata__": {"type": "ACBus"}, "name": "out-of-range", "angle": 2.0},
+        {"__metadata__": {"type": "ACBus"}, "name": "valid", "angle": 0.5},
+    ]
+
+    result = upgrade_steps.upgrade_ac_bus({"data": {"components": buses}})
+
+    angles = {bus["name"]: bus.get("angle") for bus in result["data"]["components"]}
+    assert angles == {"null": None, "missing": None, "out-of-range": 0.0, "valid": 0.5}
+
+
+@pytest.mark.parametrize("step", SiennaUpgrader.steps, ids=lambda step: step.name)
+def test_upgrade_steps_leave_systems_without_components_unchanged(step: UpgradeStep) -> None:
+    """Every system step must tolerate files that carry no components."""
+    for system_data in ({}, {"data": {"components": []}}):
+        original = json.loads(json.dumps(system_data))
+        assert step.func(system_data) == original
+
+
 def test_data_upgrader_feature_and_duration_helpers() -> None:
     assert data_upgrader._iso_8601_duration_from_milliseconds(None) is None
     assert data_upgrader._iso_8601_duration_from_milliseconds("") is None
@@ -592,6 +662,77 @@ def test_upgrader_upgrade_step_failure_and_file_mode_error(tmp_path: Path, monke
     result = file_upgrader.upgrade(current_version="1.0.0", upgrade_type=UpgradeType.FILE)
     assert result.is_err()
     assert "file step failed" in str(result.err())
+
+
+def test_system_upgrade_resolves_directory_and_skips_completed_steps(tmp_path: Path) -> None:
+    """Directory inputs use the system JSON, and steps at or below the data version are skipped."""
+    (tmp_path / "system_metadata.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "case.json").write_text(json.dumps({"data": {"components": []}}), encoding="utf-8")
+    ran: list[str] = []
+
+    def make_step(name: str, version: str, upgrade_type: UpgradeType) -> UpgradeStep:
+        def step(data: dict[str, Any]) -> dict[str, Any]:
+            ran.append(name)
+            return data
+
+        return UpgradeStep(name=name, func=step, target_version=version, upgrade_type=upgrade_type)
+
+    upgrader = SiennaUpgrader(
+        tmp_path,
+        steps=[
+            make_step("already_applied", "1.0.0", UpgradeType.SYSTEM),
+            make_step("file_only", "2.0.0", UpgradeType.FILE),
+            make_step("pending", "2.0.0", UpgradeType.SYSTEM),
+        ],
+    )
+
+    result = upgrader.upgrade(current_version="1.0.0", upgrade_type=UpgradeType.SYSTEM)
+
+    assert result.unwrap() == tmp_path / "case.json"
+    assert ran == ["pending"]
+
+
+def test_metadata_repairs_update_serialized_deterministic_metadata() -> None:
+    """Forecast periods and timestamps in metadata blobs must match InfrastructureSystems.jl."""
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE time_series_associations "
+        "(time_series_type TEXT, resolution TEXT, horizon TEXT, interval TEXT, initial_timestamp TEXT)"
+    )
+    conn.execute("CREATE TABLE time_series_metadata (metadata_uuid TEXT, metadata TEXT)")
+    conn.execute(
+        "INSERT INTO time_series_associations VALUES ('Deterministic', 'PT1H', NULL, NULL, "
+        "'2023-01-01 00:00:00.000')"
+    )
+    blobs = {
+        "forecast": {
+            "__metadata__": {"type": "DeterministicMetadata"},
+            "resolution": "PT1H",
+            "initial_timestamp": "2023-01-01 00:00:00",
+        },
+        "static": {"__metadata__": {"type": "SingleTimeSeriesMetadata"}, "resolution": "PT1H"},
+    }
+    conn.executemany(
+        "INSERT INTO time_series_metadata VALUES (?, ?)",
+        [(key, json.dumps(value)) for key, value in blobs.items()],
+    )
+    conn.execute("INSERT INTO time_series_metadata VALUES ('corrupt', '{not json')")
+
+    assert data_upgrader._repair_deterministic_metadata_periods(conn) == 2
+    assert data_upgrader._normalize_metadata_timestamps(conn) == 2
+
+    association = conn.execute("SELECT * FROM time_series_associations").fetchone()
+    assert association == ("DeterministicSingleTimeSeries", "PT1H", "PT1H", "PT1H", "2023-01-01T00:00:00")
+    stored = {
+        key: json.loads(value)
+        for key, value in conn.execute("SELECT metadata_uuid, metadata FROM time_series_metadata")
+        if key != "corrupt"
+    }
+    assert stored["forecast"]["horizon"] == stored["forecast"]["interval"] == "PT1H"
+    assert stored["forecast"]["initial_timestamp"] == "2023-01-01T00:00:00"
+    assert "horizon" not in stored["static"]
 
 
 def test_run_sienna_upgrades_store_and_h5_error_paths(tmp_path: Path, monkeypatch) -> None:
