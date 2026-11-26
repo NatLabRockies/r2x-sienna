@@ -30,8 +30,8 @@ from infrasys.supplemental_attribute_manager import SupplementalAttributeManager
 from infrasys.time_series_manager import TimeSeriesManager
 from infrasys.time_series_metadata_store import TimeSeriesMetadataStore
 from loguru import logger
-from pydantic import ValidationError
-from r2x_core import Plugin, System
+from pydantic import BaseModel, ValidationError
+from r2x_core import HasUnits, Plugin, System
 from rust_ok import Err, Ok, Result
 
 from r2x_sienna.models.enums import ReserveDirection, ReserveType
@@ -63,7 +63,7 @@ class SiennaParser(Plugin[SiennaConfig]):
         """Prepare and normalize configuration and time-related data.
 
         Initializes internal data structures required for component building.
-        Supports reading from stdin_payload when available (r2x-core 0.2.0+).
+        Supports reading from stdin_payload when available.
 
         Returns
         -------
@@ -481,6 +481,17 @@ class SiennaParser(Plugin[SiennaConfig]):
             for field_name, value in values.items()
             if field_name in component_type.model_fields and value is not None
         }
+        if not self.skip_validation and issubclass(component_type, HasUnits):
+            for field_name, spec in component_type.unit_specs.items():
+                value = valid_values.get(field_name)
+                if spec.base is not None and isinstance(value, dict | BaseModel):
+                    if isinstance(value, dict) and {"value", "unit"} <= value.keys():
+                        continue
+                    # PSY structured fields already contain internal per-unit values.
+                    valid_values[field_name] = {
+                        "value": value.model_dump() if isinstance(value, BaseModel) else value,
+                        "unit": "pu",
+                    }
         try:
             actual_component = (
                 component_type.model_construct(**valid_values)
@@ -496,7 +507,7 @@ class SiennaParser(Plugin[SiennaConfig]):
             )
             return None
         if actual_component is not None:
-            self.system._components.add(actual_component, deserialization_in_progress=True)
+            self.system.add_component(actual_component, deserialization_in_progress=True)
             logger.trace(
                 "Created {} '{}' (uuid={})",
                 component_type.__name__,

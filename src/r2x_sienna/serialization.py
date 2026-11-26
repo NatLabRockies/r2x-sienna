@@ -6,6 +6,7 @@ from infrasys.function_data import XYCoords
 from infrasys.models import InfraSysBaseModel
 from infrasys.value_curves import InputOutputCurve
 from pint import Quantity
+from r2x_core import HasUnits
 
 from r2x_sienna.models import Arc, Complex, FromTo_ToFrom, InputOutput, MinMax, StartUpStages, UpDown
 from r2x_sienna.models.costs import OperationalCost, StorageCost
@@ -187,6 +188,19 @@ def serialize_component_to_psy(
             custom_values[field] = value
 
     data = component.model_dump(mode="json", by_alias=True, round_trip=True)
+    if isinstance(component, HasUnits):
+        for field, spec in type(component).unit_specs.items():
+            if spec.base is None:
+                continue
+            output_field = type(component).model_fields[field].serialization_alias or field
+            value = data.get(output_field)
+            if (
+                isinstance(value, dict)
+                and set(value) == {"value", "unit"}
+                and value["unit"] == "pu"
+                and isinstance(value["value"], dict)
+            ):
+                data[output_field] = value["value"]
     data = _add_psy_metadata(component, data)
     data.update(custom_values)
 

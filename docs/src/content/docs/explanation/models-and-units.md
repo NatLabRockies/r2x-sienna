@@ -59,6 +59,13 @@ A custom `usd` unit is registered in the shared unit registry.
 - Validation catches unit/type mismatches early in model construction.
 - Export output remains aligned with PSY-style numeric payload expectations.
 
+With `r2x-core` 1.x, model dumps wrap structured per-unit fields in
+`{"value": {"min": ..., "max": ...}, "unit": "pu"}` to prevent repeated conversion
+when reloading them. The Sienna parser treats PSY structured limits as already
+per-unit, and the exporter continues to emit plain PSY structures rather than
+these internal envelopes. Parsed components receive the system's base through
+the public `system_base` property.
+
 ## PSY Schema Sync Policy
 
 `r2x-sienna` tracks the `PowerSystems.jl` model library for overlapping component names.
