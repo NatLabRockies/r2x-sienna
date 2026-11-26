@@ -145,6 +145,10 @@ overlapping component names.
   `Line` and `MonitoredLine` active/reactive flow fields accept signed values.
 - Line requirements:
   `Line` enforces required electrical fields (`r`, `x`, `rating`) for PSY-style construction.
+- Transformer voltage bases:
+  missing winding base voltages default to `None`. PSY exports omit missing or `0.0` kV bases so
+  PowerSystems.jl derives them from the connected buses; the upgrader also replaces legacy `0.0`
+  bases with connected-bus voltages when parsing.
 - Static injection linkage:
   static-injection models support optional `dynamic_injector` linkage to dynamic models.
 - Load conformity naming:

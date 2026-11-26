@@ -436,6 +436,52 @@ def test_upgrade_step_helpers_for_transformers() -> None:
     assert three_w["base_voltage_tertiary"] == 230.0
 
 
+def test_transformer_upgrades_replace_zero_base_voltages_with_bus_voltages() -> None:
+    """Legacy 0.0 kV bases produce NaN natural-unit impedances in PowerSystems.jl."""
+    bus_map = {"bus_1": 230.0, "bus_2": 115.0}
+    arc_map = {"a": ("bus_1", "bus_2"), "b": ("bus_2", "bus_1")}
+    two_w = {"arc": {"value": "a"}, "base_voltage_primary": 0.0, "base_voltage_secondary": 0.0}
+    three_w = {
+        "primary_star_arc": {"value": "a"},
+        "secondary_star_arc": {"value": "b"},
+        "tertiary_star_arc": {"value": "a"},
+        "base_power_12": 100.0,
+        "base_power_23": 100.0,
+        "base_power_13": 100.0,
+        "base_voltage_primary": 0.0,
+        "base_voltage_secondary": 0.0,
+        "base_voltage_tertiary": 0.0,
+    }
+
+    upgrade_steps._patch_two_winding_transformer(two_w, bus_map, arc_map, 100.0)
+    upgrade_steps._patch_three_winding_transformer(three_w, bus_map, arc_map, 100.0)
+
+    assert (two_w["base_voltage_primary"], two_w["base_voltage_secondary"]) == (230.0, 115.0)
+    assert three_w["base_voltage_primary"] == 230.0
+    assert three_w["base_voltage_secondary"] == 115.0
+    assert three_w["base_voltage_tertiary"] == 230.0
+
+
+def test_transformer_upgrades_keep_unresolved_base_voltages_unset() -> None:
+    """Unresolvable bases stay None so PowerSystems.jl derives them instead of using 0.0 kV."""
+    two_w = {"arc": {"value": "unknown"}, "base_voltage_primary": None}
+    three_w = {
+        "primary_star_arc": {"value": "unknown"},
+        "base_power_12": 100.0,
+        "base_power_23": 100.0,
+        "base_power_13": 100.0,
+    }
+
+    upgrade_steps._patch_two_winding_transformer(two_w, {}, {}, 100.0)
+    upgrade_steps._patch_three_winding_transformer(three_w, {}, {}, 100.0)
+
+    for comp, fields in (
+        (two_w, ("base_voltage_primary", "base_voltage_secondary")),
+        (three_w, ("base_voltage_primary", "base_voltage_secondary", "base_voltage_tertiary")),
+    ):
+        assert all(comp.get(field) is None for field in fields)
+
+
 def test_data_upgrader_feature_and_duration_helpers() -> None:
     assert data_upgrader._iso_8601_duration_from_milliseconds(None) is None
     assert data_upgrader._iso_8601_duration_from_milliseconds("") is None

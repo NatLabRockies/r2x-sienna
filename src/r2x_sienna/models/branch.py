@@ -175,10 +175,12 @@ class TwoWindingTransformer(ACBranch):
     base_power: (
         Annotated[float | None, Field(ge=0, description="Thermal rating of the transformer.")] | None
     ) = None
-    base_voltage_primary: Annotated[float | None, Field(ge=0, description="Primary base voltage in kV")] = 0.0
+    base_voltage_primary: Annotated[float | None, Field(ge=0, description="Primary base voltage in kV")] = (
+        None
+    )
     base_voltage_secondary: Annotated[
         float | None, Field(ge=0, description="Secondary base voltage in kV")
-    ] = 0.0
+    ] = None
     rating_b: Annotated[float, Field(description="Second thermal rating of the transformer.")] | None = None
     rating_c: Annotated[float, Field(description="Third thermal rating of the transformer.")] | None = None
 
@@ -284,12 +286,14 @@ class ThreeWindingTransformer(Branch):
         float, Field(gt=0, description="Base power (MVA) for secondary-tertiary windings")
     ]
     base_power_13: Annotated[float, Field(gt=0, description="Base power (MVA) for primary-tertiary windings")]
-    base_voltage_primary: Annotated[float | None, Field(ge=0, description="Primary base voltage in kV")] = 0.0
+    base_voltage_primary: Annotated[float | None, Field(ge=0, description="Primary base voltage in kV")] = (
+        None
+    )
     base_voltage_secondary: Annotated[
         float | None, Field(ge=0, description="Secondary base voltage in kV")
-    ] = 0.0
+    ] = None
     base_voltage_tertiary: Annotated[float | None, Field(ge=0, description="Tertiary base voltage in kV")] = (
-        0.0
+        None
     )
     g: Annotated[
         float, Field(description="Shunt conductance in pu from star bus to ground (MAG1 in PSS/E)")

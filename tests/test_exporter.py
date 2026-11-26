@@ -19,18 +19,24 @@ from r2x_sienna import (
 )
 from r2x_sienna.models import (
     ACBus,
+    Arc,
+    Complex,
     HydroReservoir,
     MinMax,
+    PhaseShiftingTransformer,
+    PhaseShiftingTransformer3W,
     PowerLoad,
     PrimeMoversType,
     RenewableDispatch,
     StorageCost,
     SynchronousCondenser,
+    TapTransformer,
     ThermalFuels,
     ThermalGenerationCost,
     ThermalMultiStart,
     ThermalStandard,
     Transformer2W,
+    Transformer3W,
 )
 from r2x_sienna.serialization import serialize_component_to_psy, serialize_value
 
@@ -40,6 +46,83 @@ def test_storage_cost_omits_null_variable_curves():
 
     assert "charge_variable_cost" not in serialized
     assert "discharge_variable_cost" not in serialized
+
+
+@pytest.mark.parametrize(
+    "transformer_type",
+    [Transformer2W, TapTransformer, PhaseShiftingTransformer, Transformer3W, PhaseShiftingTransformer3W],
+)
+def test_transformer_export_omits_missing_base_voltages(transformer_type):
+    """Missing voltages must be absent, not null, for PSY constructor defaults to apply."""
+    transformer = transformer_type.example()
+    fields = ["base_voltage_primary", "base_voltage_secondary"]
+    if isinstance(transformer, (Transformer3W, PhaseShiftingTransformer3W)):
+        fields.append("base_voltage_tertiary")
+    for field in fields:
+        setattr(transformer, field, None)
+
+    serialized = serialize_component_to_psy(transformer)
+
+    assert all(field not in serialized for field in fields)
+    assert all(getattr(transformer, field) is None for field in fields)
+
+
+def test_transformer_export_preserves_positive_and_omits_zero_base_voltages():
+    """A 0 kV base is never usable by PowerSystems.jl, so export lets it fall back to the bus."""
+    transformer = Transformer3W.example()
+    transformer.base_voltage_primary = 120.0
+    transformer.base_voltage_secondary = 0.0
+    transformer.base_voltage_tertiary = None
+
+    serialized = serialize_component_to_psy(transformer)
+
+    assert serialized["base_voltage_primary"] == 120.0
+    assert "base_voltage_secondary" not in serialized
+    assert "base_voltage_tertiary" not in serialized
+    assert transformer.base_voltage_secondary == 0.0
+
+
+def test_transformer_base_voltages_roundtrip(tmp_path):
+    """Unspecified bases are recovered from the connected buses when parsing the PSY export."""
+    from r2x_core import System as R2XSystem
+
+    primary = ACBus(name="primary", number=1, base_voltage=230.0, angle=0.0, magnitude=1.0)
+    secondary = ACBus(name="secondary", number=2, base_voltage=115.0, angle=0.0, magnitude=1.0)
+    arc = Arc(from_to=primary, to_from=secondary)
+    transformer = Transformer2W(
+        name="transformer",
+        arc=arc,
+        r=0.01,
+        x=0.05,
+        primary_shunt=Complex(real=0.0, imag=0.0),
+        rating=1.0,
+        base_power=100.0,
+    )
+    system = R2XSystem(name="transformer-roundtrip", system_base=100.0)
+    system.add_components(primary, secondary, arc, transformer)
+    output_file = tmp_path / "system.json"
+    exporter = SiennaExporter.from_context(
+        PluginContext(config=SiennaConfig(output_path=str(output_file)), system=system)
+    )
+    exporter.should_export_time_series = False
+    exporter.run()
+
+    output = json.loads(output_file.read_text())
+    exported = next(c for c in output["data"]["components"] if c.get("name") == transformer.name)
+    assert "base_voltage_primary" not in exported
+    assert "base_voltage_secondary" not in exported
+
+    parser = SiennaParser.from_context(
+        PluginContext(
+            config=SiennaConfig(json_path=str(output_file), model_year=2029),
+            store=DataStore(path=tmp_path),
+        )
+    )
+    parsed = parser.run().system.get_component(Transformer2W, transformer.name)
+    assert parsed.base_voltage_primary == 230.0
+    assert parsed.base_voltage_secondary == 115.0
+    assert parsed.r == transformer.r
+    assert parsed.x == transformer.x
 
 
 def test_thermal_trajectory_exports_without_unit_envelope():

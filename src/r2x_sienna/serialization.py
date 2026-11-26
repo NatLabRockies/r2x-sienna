@@ -9,6 +9,7 @@ from pint import Quantity
 from r2x_core import HasUnits
 
 from r2x_sienna.models import Arc, Complex, FromTo_ToFrom, InputOutput, MinMax, StartUpStages, UpDown
+from r2x_sienna.models.branch import ThreeWindingTransformer, TwoWindingTransformer
 from r2x_sienna.models.costs import OperationalCost, StorageCost
 from r2x_sienna.parser import PARAMETRIZED_TYPES
 
@@ -203,6 +204,12 @@ def serialize_component_to_psy(
                 data[output_field] = value["value"]
     data = _add_psy_metadata(component, data)
     data.update(custom_values)
+
+    if isinstance(component, TwoWindingTransformer | ThreeWindingTransformer):
+        # PowerSystems.jl derives omitted bases from connected buses; 0 kV would yield NaN impedances.
+        for field in ("base_voltage_primary", "base_voltage_secondary", "base_voltage_tertiary"):
+            if field in data and not data[field]:
+                del data[field]
 
     if not include:
         include = {}
